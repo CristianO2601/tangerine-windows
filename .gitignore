@@ -23,3 +23,6 @@ assets/*_backup.*
 *.pem
 *.key
 secrets/
+
+# Generated at build time
+packaging/_version_info_generated.txt

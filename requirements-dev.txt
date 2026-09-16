@@ -1,1 +1,5 @@
 pytest>=8
+
+# Packaging: frozen Windows build (packaging\tangerine.spec)
+pyinstaller>=6.0
+pyinstaller-hooks-contrib
