@@ -5,6 +5,15 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+if "--version" in sys.argv:
+    try:
+        from tangerine.paths import APP_VERSION
+
+        print(f"Tangerine {APP_VERSION}")
+    except Exception:
+        print("Tangerine (version unknown)")
+    raise SystemExit(0)
+
 try:
     from tangerine.main import main
 except Exception as exc:
