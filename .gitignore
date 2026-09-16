@@ -16,3 +16,10 @@ desktop.ini
 # Project-specific
 assets/*_backup.*
 *.log
+
+# Secrets and local environment (never commit these)
+.env
+.env.*
+*.pem
+*.key
+secrets/
