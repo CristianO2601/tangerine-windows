@@ -9,6 +9,7 @@ from typing import Callable
 
 from PySide6.QtCore import QObject, Signal
 
+from . import i18n
 from .engines import Ctx, EngineError
 
 log = logging.getLogger("tangerine")
@@ -48,11 +49,11 @@ class Job(QObject):
             else:
                 paths = [result]
             if self.cancel_event.is_set():
-                raise EngineError("Cancelled.")
+                raise EngineError(i18n.tr("err.cancelled"))
             self.finished.emit(paths)
         except EngineError as exc:
             if self.cancel_event.is_set():
-                self.failed.emit("Cancelled.")
+                self.failed.emit(i18n.tr("err.cancelled"))
             else:
                 self.failed.emit(str(exc))
         except Exception as exc:  # noqa: BLE001

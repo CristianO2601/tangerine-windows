@@ -17,7 +17,7 @@ from typing import Callable
 
 from PIL import Image, ImageOps
 
-from . import naming
+from . import i18n, naming
 from .catalog import (
     AUDIO_EXTS, FAMILY_ARCHIVE, FAMILY_AUDIO, FAMILY_DOC, FAMILY_GIF,
     FAMILY_IMAGE, FAMILY_PDF, FAMILY_TXT, FAMILY_VIDEO, GIF_EXTS, PDF_EXTS,
@@ -63,12 +63,12 @@ def _no_window_kw() -> dict:
 def verify_writable(path: Path) -> None:
     """Reject locked files early (macOS parity: locked-file rejection)."""
     if not path.exists():
-        raise EngineError(f"The file no longer exists: {path.name}")
+        raise EngineError(i18n.tr("err.file_missing", name=path.name))
     try:
         with open(path, "rb+"):
             pass
     except PermissionError as exc:
-        raise EngineError(f"The file is locked or read-only: {path.name}") from exc
+        raise EngineError(i18n.tr("err.file_locked", name=path.name)) from exc
     except OSError:
         return
 
@@ -89,7 +89,8 @@ def load_image(path: Path) -> Image.Image:
         img.load()
         return img
     except Exception as exc:
-        raise EngineError(f"Could not read image: {path.name}\n{exc}") from exc
+        raise EngineError(
+            i18n.tr("err.read_image", name=path.name, detail=exc)) from exc
 
 
 def render_svg(path: Path, target_width: int | None = None) -> Image.Image:
@@ -103,7 +104,7 @@ def render_svg(path: Path, target_width: int | None = None) -> Image.Image:
         data = gzip.decompress(data)
     renderer = QSvgRenderer(QByteArray(data))
     if not renderer.isValid():
-        raise EngineError(f"Could not rasterize SVG: {path.name}")
+        raise EngineError(i18n.tr("err.rasterize_svg", name=path.name))
     size = renderer.defaultSize()
     width = target_width or (size.width() if size.width() > 0 else 1024)
     height = int(round(width * size.height() / size.width())) if size.width() else width
@@ -152,7 +153,8 @@ def _image_save_args(target: str, img: Image.Image, source: Path) -> tuple[dict,
 
 def convert_image(path: Path, target: str, ctx: Ctx, reserved: set[Path]) -> Path:
     verify_writable(path)
-    ctx.status(f"Converting {path.name} to {target.upper()}")
+    ctx.status(i18n.tr(
+        "action.converting_file_to", name=path.name, target=target.upper()))
     img = load_image(path)
     folder = path.parent
     out_path = _unique(folder, path.stem, f".{target}", reserved)
@@ -181,7 +183,8 @@ def convert_image(path: Path, target: str, ctx: Ctx, reserved: set[Path]) -> Pat
             img = img.convert("RGB")
         img.save(out_path, fmt, **kwargs)
     except Exception as exc:
-        raise EngineError(f"Could not save {out_path.name}\n{exc}") from exc
+        raise EngineError(
+            i18n.tr("err.save_image", name=out_path.name, detail=exc)) from exc
     ctx.progress(1.0)
     return out_path
 
@@ -198,7 +201,8 @@ def images_to_pdf(paths: list[Path], ctx: Ctx, reserved: set[Path]) -> Path:
             try:
                 img = Image.open(path)
             except Exception as exc:
-                raise EngineError(f"Could not read image: {path.name}\n{exc}") from exc
+                raise EngineError(
+                    i18n.tr("err.read_image", name=path.name, detail=exc)) from exc
             if img.getexif().get(274, 1) != 1:
                 img = ImageOps.exif_transpose(img)
             if img.mode in ("RGBA", "LA", "P"):
@@ -208,7 +212,7 @@ def images_to_pdf(paths: list[Path], ctx: Ctx, reserved: set[Path]) -> Path:
             pages.append(img)
         total = len(pages)
         if total == 0:
-            raise EngineError("No images selected.")
+            raise EngineError(i18n.tr("err.no_images"))
         pages[0].save(
             out_path, "PDF", resolution=150.0,
             save_all=True, append_images=pages[1:],
@@ -257,7 +261,8 @@ def convert_audio(path: Path, target: str, ctx: Ctx, reserved: set[Path]) -> Pat
     verify_writable(path)
     info = probe(path)
     out_path = _unique(path.parent, path.stem, f".{target}", reserved)
-    ctx.status(f"Converting {path.name} to {target.upper()}")
+    ctx.status(i18n.tr(
+        "action.converting_file_to", name=path.name, target=target.upper()))
     args = ["-i", str(path), "-vn", *CODEC_ARGS[target], "-map_metadata", "0", str(out_path)]
     tail: list[str] = []
     code = run_ffmpeg(args, info.duration, ctx.progress, ctx.cancel, tail=tail)
@@ -272,7 +277,8 @@ def convert_video(path: Path, target: str, ctx: Ctx, reserved: set[Path]) -> Pat
     verify_writable(path)
     info = probe(path)
     out_path = _unique(path.parent, path.stem, f".{target}", reserved)
-    ctx.status(f"Converting {path.name} to {target.upper()}")
+    ctx.status(i18n.tr(
+        "action.converting_file_to", name=path.name, target=target.upper()))
     args = ["-i", str(path)]
     if target == "mp4":
         args += [
@@ -320,7 +326,8 @@ def convert_gif(path: Path, target: str, ctx: Ctx, reserved: set[Path]) -> Path:
     verify_writable(path)
     info = probe(path)
     out_path = _unique(path.parent, path.stem, f".{target}", reserved)
-    ctx.status(f"Converting {path.name} to {target.upper()}")
+    ctx.status(i18n.tr(
+        "action.converting_file_to", name=path.name, target=target.upper()))
     args = ["-i", str(path)]
     if target == "mp4":
         args += ["-vf", _EVEN_SCALE, "-c:v", "libx264", "-crf", "20", "-preset", "veryfast",
@@ -345,7 +352,7 @@ def _finish_ffmpeg(code: int, out_path: Path, tail: list[str] | None = None) -> 
                 out_path.unlink()
             except OSError:
                 pass
-        raise EngineError("Cancelled.")
+        raise EngineError(i18n.tr("err.cancelled"))
     if code != 0 or not out_path.exists():
         out_path.unlink(missing_ok=True)
         detail = ""
@@ -353,10 +360,11 @@ def _finish_ffmpeg(code: int, out_path: Path, tail: list[str] | None = None) -> 
             lines = [line for line in tail if line][-3:]
             if lines:
                 detail = ": " + " | ".join(lines)
-        raise EngineError(f"FFmpeg could not process {out_path.name}{detail}")
+        raise EngineError(
+            i18n.tr("err.ffmpeg_process", name=out_path.name) + detail)
     if out_path.stat().st_size == 0:
         out_path.unlink(missing_ok=True)
-        raise EngineError("FFmpeg produced an empty file.")
+        raise EngineError(i18n.tr("err.ffmpeg_empty"))
 
 
 # ---------------------------------------------------------------------------
@@ -372,9 +380,9 @@ def _open_pdf_reader(path: Path):
     try:
         reader = PdfReader(str(path))
     except Exception as exc:
-        raise EngineError("This PDF could not be opened.") from exc
+        raise EngineError(i18n.tr("err.pdf_open")) from exc
     if reader.is_encrypted:
-        raise EngineError("Password-protected PDFs are not supported.")
+        raise EngineError(i18n.tr("err.pdf_password"))
     return reader
 
 
@@ -385,8 +393,72 @@ def _open_pdf_document(path: Path):
         return pdfium.PdfDocument(str(path))
     except Exception as exc:
         if "password" in str(exc).lower():
-            raise EngineError("Password-protected PDFs are not supported.") from exc
-        raise EngineError("This PDF could not be opened.") from exc
+            raise EngineError(i18n.tr("err.pdf_password")) from exc
+        raise EngineError(i18n.tr("err.pdf_open")) from exc
+
+
+_OCR_DPI = 250.0
+
+_ocr_available_cache: bool | None = None
+_ocr_engine_cache = None
+
+
+def _ocr_available() -> bool:
+    """Whether the optional open-source OCR engine can be imported."""
+    global _ocr_available_cache
+    if _ocr_available_cache is None:
+        try:
+            from rapidocr_onnxruntime import RapidOCR  # noqa: F401
+
+            _ocr_available_cache = True
+        except Exception:
+            _ocr_available_cache = False
+    return _ocr_available_cache
+
+
+def _ocr_engine():
+    global _ocr_engine_cache
+    if _ocr_engine_cache is None:
+        from rapidocr_onnxruntime import RapidOCR
+
+        _ocr_engine_cache = RapidOCR()
+    return _ocr_engine_cache
+
+
+def _ocr_pdf_text(path: Path, ctx: Ctx | None = None) -> str:
+    """OCR every page of *path* (250 dpi renders) and join with page markers."""
+    import numpy as np
+
+    pdf = _open_pdf_document(path)
+    engine = _ocr_engine()
+    page_count = len(pdf)
+    scale = _OCR_DPI / 72.0
+    chunks: list[str] = []
+    for number in range(page_count):
+        if ctx is not None and ctx.cancelled():
+            raise EngineError(i18n.tr("err.cancelled"))
+        if ctx is not None:
+            ctx.status(i18n.tr(
+                "action.reading_page_ocr",
+                number=number + 1, total=page_count,
+            ))
+        image = pdf[number].render(scale=scale).to_pil()
+        try:
+            result, _ = engine(np.asarray(image))
+        finally:
+            image.close()
+        text = "\n".join(line[1] for line in result) if result else ""
+        if page_count > 1:
+            chunks.append(f"----- Page {number + 1} -----\n{text}")
+        else:
+            chunks.append(text)
+        if ctx is not None:
+            ctx.progress((number + 1) / page_count)
+    return "\n\n".join(chunks).strip()
+
+
+def _is_page_separator(line: str) -> bool:
+    return line.startswith("----- Page ") and line.endswith(" -----")
 
 
 def pdf_to_images(path: Path, target: str, ctx: Ctx, reserved: set[Path]) -> list[Path]:
@@ -425,13 +497,14 @@ def _render_pdf_pages(
     try:
         for number in range(page_count):
             if ctx.cancelled():
-                raise EngineError("Cancelled.")
+                raise EngineError(i18n.tr("err.cancelled"))
             page = pdf[number]
             image = page.render(scale=scale).to_pil()
             page_name = f"Page {number + 1:03d}{ext}"
             _save_rendered(image, tmp_dir / page_name, target)
             ctx.progress((number + 1) / page_count)
-            ctx.status(f"Rendering page {number + 1} of {page_count}")
+            ctx.status(i18n.tr(
+                "action.rendering_page", number=number + 1, total=page_count))
         os.replace(tmp_dir, out_dir)
     except Exception:
         shutil.rmtree(tmp_dir, ignore_errors=True)
@@ -454,7 +527,7 @@ def pdf_text(path: Path, ctx: Ctx | None = None) -> str:
     chunks = []
     for number, page in enumerate(reader.pages, start=1):
         if ctx is not None and ctx.cancelled():
-            raise EngineError("Cancelled.")
+            raise EngineError(i18n.tr("err.cancelled"))
         try:
             text = page.extract_text() or ""
         except Exception:
@@ -471,18 +544,23 @@ def pdf_text(path: Path, ctx: Ctx | None = None) -> str:
         pages = []
         for number in range(len(pdf)):
             if ctx is not None and ctx.cancelled():
-                raise EngineError("Cancelled.")
+                raise EngineError(i18n.tr("err.cancelled"))
             page = pdf[number]
             text = page.get_textpage().get_text_range() or ""
             if len(pdf) > 1:
                 pages.append(f"----- Page {number + 1} -----\n{text}")
             else:
                 pages.append(text)
-        return "\n\n".join(pages).strip()
+        result = "\n\n".join(pages).strip()
     except EngineError:
         raise
     except Exception:
-        return ""
+        result = ""
+    if result:
+        return result
+    if _ocr_available():
+        return _ocr_pdf_text(path, ctx)
+    raise EngineError(i18n.tr("err.ocr_install"))
 
 
 def convert_pdf(path: Path, target: str, ctx: Ctx, reserved: set[Path]) -> list[Path]:
@@ -490,20 +568,17 @@ def convert_pdf(path: Path, target: str, ctx: Ctx, reserved: set[Path]) -> list[
     if target in ("jpg", "png"):
         return pdf_to_images(path, target, ctx, reserved)
     if target == "txt":
-        ctx.status(f"Extracting text from {path.name}")
+        ctx.status(i18n.tr("action.extracting_text", name=path.name))
         text = pdf_text(path, ctx)
         if not text:
-            raise EngineError(
-                "This PDF has no selectable text, so OCR would be required.\n"
-                "Tangerine's text export does not perform OCR."
-            )
+            raise EngineError(i18n.tr("err.pdf_no_text"))
         out_path = _unique(path.parent, path.stem, ".txt", reserved)
         out_path.write_text(text + "\n", "utf-8")
         ctx.progress(1.0)
         return [out_path]
     if target == "docx":
         return [pdf_to_docx(path, ctx, reserved)]
-    raise EngineError(f"Unsupported PDF conversion: {target}")
+    raise EngineError(i18n.tr("err.pdf_unsupported", target=target))
 
 
 def pdf_to_docx(path: Path, ctx: Ctx, reserved: set[Path]) -> Path:
@@ -512,27 +587,36 @@ def pdf_to_docx(path: Path, ctx: Ctx, reserved: set[Path]) -> Path:
 
     reader = _open_pdf_reader(path)
     document = docx.Document()
-    pdf = _open_pdf_document(path)
-    scale = 150.0 / 72.0
-    for number, page in enumerate(reader.pages):
+    page_texts: list[str] = []
+    for page in reader.pages:
         if ctx.cancelled():
-            raise EngineError("Cancelled.")
+            raise EngineError(i18n.tr("err.cancelled"))
         try:
-            text = page.extract_text() or ""
+            page_texts.append(page.extract_text() or "")
         except Exception:
-            text = ""
-        if text.strip():
-            for paragraph in text.splitlines():
-                document.add_paragraph(paragraph)
-        else:
-            rendered = pdf[number].render(scale=scale).to_pil()
-            if rendered.mode != "RGB":
-                rendered = rendered.convert("RGB")
-            tmp = io.BytesIO()
-            rendered.save(tmp, "PNG")
-            tmp.seek(0)
-            document.add_picture(tmp, width=Inches(6.5))
-        ctx.progress((number + 1) / max(len(reader.pages), 1))
+            page_texts.append("")
+    if _ocr_available() and not any(text.strip() for text in page_texts):
+        for line in _ocr_pdf_text(path, ctx).splitlines():
+            if not _is_page_separator(line):
+                document.add_paragraph(line)
+    else:
+        pdf = _open_pdf_document(path)
+        scale = 150.0 / 72.0
+        for number, text in enumerate(page_texts):
+            if ctx.cancelled():
+                raise EngineError(i18n.tr("err.cancelled"))
+            if text.strip():
+                for paragraph in text.splitlines():
+                    document.add_paragraph(paragraph)
+            else:
+                rendered = pdf[number].render(scale=scale).to_pil()
+                if rendered.mode != "RGB":
+                    rendered = rendered.convert("RGB")
+                tmp = io.BytesIO()
+                rendered.save(tmp, "PNG")
+                tmp.seek(0)
+                document.add_picture(tmp, width=Inches(6.5))
+            ctx.progress((number + 1) / max(len(page_texts), 1))
     out_path = _unique(path.parent, path.stem, ".docx", reserved)
     document.save(str(out_path))
     return out_path
@@ -596,7 +680,7 @@ def text_to_pdf(text: str, out_path: Path, ctx: Ctx) -> Path:
     from reportlab.pdfbase import pdfmetrics
     from reportlab.pdfgen import canvas as pdf_canvas
 
-    ctx.status(f"Writing {out_path.name}")
+    ctx.status(i18n.tr("action.writing", name=out_path.name))
     margin = 54.0
     font_size = 10.0
     leading = 13.5
@@ -622,7 +706,7 @@ def text_to_pdf(text: str, out_path: Path, ctx: Ctx) -> Path:
         if ctx.cancelled():
             pdf.save()
             out_path.unlink(missing_ok=True)
-            raise EngineError("Cancelled.")
+            raise EngineError(i18n.tr("err.cancelled"))
         if y < margin:
             pdf.showPage()
             pdf.setFont(font_name, font_size)
@@ -681,7 +765,8 @@ def txt_to_image(path: Path, target: str, ctx: Ctx, reserved: set[Path]) -> list
 
 def convert_txt(path: Path, target: str, ctx: Ctx, reserved: set[Path]) -> list[Path]:
     verify_writable(path)
-    ctx.status(f"Converting {path.name} to {target.upper()}")
+    ctx.status(i18n.tr(
+        "action.converting_file_to", name=path.name, target=target.upper()))
     if target == "pdf":
         return [txt_to_pdf(path, ctx, reserved)]
     return txt_to_image(path, target, ctx, reserved)
@@ -693,7 +778,7 @@ def convert_txt(path: Path, target: str, ctx: Ctx, reserved: set[Path]) -> list[
 
 def _check_extract_size(total: int) -> None:
     if total > _MAX_EXTRACT_BYTES:
-        raise EngineError("This archive is too large to extract safely.")
+        raise EngineError(i18n.tr("err.archive_too_large"))
 
 
 def _extract_tar(archive: tarfile.TarFile, dest: Path) -> None:
@@ -713,32 +798,32 @@ def _extract_archive(path: Path, dest: Path, ctx: Ctx) -> None:
         with zipfile.ZipFile(path) as archive:
             _check_extract_size(sum(info.file_size for info in archive.infolist()))
             if ctx.cancelled():
-                raise EngineError("Cancelled.")
+                raise EngineError(i18n.tr("err.cancelled"))
             archive.extractall(dest)
         return
     if suffix == ".rar":
         unrar = unrar_path()
         if not unrar:
-            raise EngineError("WinRAR is required to read RAR archives.")
+            raise EngineError(i18n.tr("err.rar_missing_reader"))
         if ctx.cancelled():
-            raise EngineError("Cancelled.")
+            raise EngineError(i18n.tr("err.cancelled"))
         code = run_process([unrar, "x", "-y", str(path), str(dest) + os.sep], cancel=ctx.cancel)
         if code == -9:
-            raise EngineError("Cancelled.")
+            raise EngineError(i18n.tr("err.cancelled"))
         if code != 0:
-            raise EngineError("Could not extract this RAR archive (password-protected or multivolume RAR is not supported).")
+            raise EngineError(i18n.tr("err.rar_extract"))
         return
     if suffix == ".tar":
         with tarfile.open(path, "r:") as archive:
             _check_extract_size(sum(member.size for member in archive.getmembers()))
             if ctx.cancelled():
-                raise EngineError("Cancelled.")
+                raise EngineError(i18n.tr("err.cancelled"))
             _extract_tar(archive, dest)
         return
     if suffix == ".gz":
         _extract_gzip(path, dest, ctx)
         return
-    raise EngineError(f"Unsupported archive: {path.name}")
+    raise EngineError(i18n.tr("err.archive_unsupported", name=path.name))
 
 
 def _extract_gzip(path: Path, dest: Path, ctx: Ctx) -> None:
@@ -746,7 +831,7 @@ def _extract_gzip(path: Path, dest: Path, ctx: Ctx) -> None:
         with tarfile.open(path, "r:gz") as archive:
             _check_extract_size(sum(member.size for member in archive.getmembers()))
             if ctx.cancelled():
-                raise EngineError("Cancelled.")
+                raise EngineError(i18n.tr("err.cancelled"))
             _extract_tar(archive, dest)
         return
     except tarfile.TarError:
@@ -759,21 +844,21 @@ def _extract_gzip(path: Path, dest: Path, ctx: Ctx) -> None:
         dst.write(head)
         total = len(head)
         if total > _MAX_EXTRACT_BYTES:
-            raise EngineError("This archive is too large to extract safely.")
+            raise EngineError(i18n.tr("err.archive_too_large"))
         while True:
             if ctx.cancelled():
-                raise EngineError("Cancelled.")
+                raise EngineError(i18n.tr("err.cancelled"))
             chunk = src.read(1024 * 1024)
             if not chunk:
                 break
             total += len(chunk)
             if total > _MAX_EXTRACT_BYTES:
-                raise EngineError("This archive is too large to extract safely.")
+                raise EngineError(i18n.tr("err.archive_too_large"))
             dst.write(chunk)
     if _looks_like_tar(head) or (total <= _GZ_SNIFF_BYTES and tarfile.is_tarfile(payload_path)):
         with tarfile.open(payload_path, "r:") as archive:
             if ctx.cancelled():
-                raise EngineError("Cancelled.")
+                raise EngineError(i18n.tr("err.cancelled"))
             _extract_tar(archive, dest)
         payload_path.unlink(missing_ok=True)
 
@@ -801,27 +886,28 @@ def _create_archive(dest_archive: Path, source_dir: Path, ctx: Ctx) -> None:
     if suffix == ".rar":
         rar = rar_path()
         if not rar:
-            raise EngineError("WinRAR is required to create RAR archives.")
+            raise EngineError(i18n.tr("err.rar_missing_writer"))
         names = [
             f".\\{entry.name}" if entry.name.startswith(("-", "@")) else entry.name
             for entry in entries
         ]
         if not names:
-            raise EngineError("The archive could not be repackaged.")
+            raise EngineError(i18n.tr("err.archive_repack"))
         if ctx.cancelled():
-            raise EngineError("Cancelled.")
+            raise EngineError(i18n.tr("err.cancelled"))
         code = run_process([rar, "a", "-m0", "-ep1", "-y", str(dest_archive), *names], cwd=str(source_dir), cancel=ctx.cancel)
         if code == -9:
-            raise EngineError("Cancelled.")
+            raise EngineError(i18n.tr("err.cancelled"))
         if code not in (0, 1):
-            raise EngineError("Could not create the RAR archive.")
+            raise EngineError(i18n.tr("err.rar_create"))
         return
-    raise EngineError(f"Unsupported archive target: {dest_archive.name}")
+    raise EngineError(i18n.tr("err.archive_target", name=dest_archive.name))
 
 
 def convert_archive(path: Path, target: str, ctx: Ctx, reserved: set[Path]) -> Path:
     verify_writable(path)
-    ctx.status(f"Repackaging {path.name} as {target.upper()}")
+    ctx.status(i18n.tr(
+        "action.repackaging", name=path.name, target=target.upper()))
     tmp_dir = Path(tempfile.mkdtemp(prefix="tangerine_arc_"))
     extract_dir = tmp_dir / "content"
     extract_dir.mkdir()
@@ -830,7 +916,7 @@ def convert_archive(path: Path, target: str, ctx: Ctx, reserved: set[Path]) -> P
     try:
         _extract_archive(path, extract_dir, ctx)
         if ctx.cancelled():
-            raise EngineError("Cancelled.")
+            raise EngineError(i18n.tr("err.cancelled"))
         _create_archive(out_path, extract_dir, ctx)
     except Exception:
         out_path.unlink(missing_ok=True)
@@ -839,7 +925,7 @@ def convert_archive(path: Path, target: str, ctx: Ctx, reserved: set[Path]) -> P
         shutil.rmtree(tmp_dir, ignore_errors=True)
     if not out_path.exists() or out_path.stat().st_size == 0:
         out_path.unlink(missing_ok=True)
-        raise EngineError("The archive could not be repackaged.")
+        raise EngineError(i18n.tr("err.archive_repack"))
     ctx.progress(1.0)
     return out_path
 
@@ -857,7 +943,7 @@ def extract_archive(path: Path, ctx: Ctx, reserved: set[Path]) -> Path:
         directory = path.parent / f"{stem} {index}"
         index += 1
     tmp_dir = Path(tempfile.mkdtemp(prefix=".tangerine_extract_", dir=str(path.parent)))
-    ctx.status(f"Extracting {path.name}")
+    ctx.status(i18n.tr("action.extracting", name=path.name))
     try:
         _extract_archive(path, tmp_dir, ctx)
         os.replace(tmp_dir, directory)
@@ -874,7 +960,7 @@ def extract_archive(path: Path, ctx: Ctx, reserved: set[Path]) -> Path:
 
 def convert_single(path: Path, target: str, ctx: Ctx, reserved: set[Path]) -> list[Path]:
     if not path.exists():
-        raise EngineError(f"The source file could not be found: {path.name}")
+        raise EngineError(i18n.tr("err.source_missing", name=path.name))
     family = family_of(path)
     if family == FAMILY_IMAGE:
         if target == "docx":
@@ -896,4 +982,4 @@ def convert_single(path: Path, target: str, ctx: Ctx, reserved: set[Path]) -> li
         return documents.convert_document(path, target, ctx, reserved)
     if family == FAMILY_ARCHIVE:
         return [convert_archive(path, target, ctx, reserved)]
-    raise EngineError(f"No conversion engine for {path.name}")
+    raise EngineError(i18n.tr("err.no_engine", name=path.name))

@@ -1,5 +1,63 @@
 # Changelog
 
+## 1.6.0 — 2026-09-16
+
+Internacionalización (inglés/español), OCR opcional para PDF escaneados y una
+ronda de correcciones, mejoras de memoria y empaquetado para la distribución.
+
+### Idioma (i18n)
+- Interfaz en **inglés** y **español**, con **431 claves por idioma**, en
+  **Ajustes → General → Idioma**; la opción **Sistema** sigue el idioma de
+  Windows (`es_MX` → español) y recurre al inglés si el locale no está
+  soportado.
+- El cambio se aplica al instante en la bandeja (menú y tooltip) y en la rueda;
+  las ventanas de editor y de progreso ya abiertas lo aplican al volver a
+  abrirse.
+- Traducidos: rueda de conversiones y herramientas (pétalos incluidos), menú de
+  bandeja, ajustes, los 20 diálogos de editor, ventanas de progreso y los
+  errores comunes de motores/herramientas. Los nombres de archivo, códigos,
+  rutas y demás datos no se traducen.
+- Nuevo módulo `tangerine/i18n.py` (`tr()`, `set_language()`,
+  `add_listener()`, resolución de `"system"` y cadena de reserva
+  idioma → inglés → clave).
+- Cobertura honesta: es una localización de interfaz; algunos mensajes de
+  reserva poco frecuentes pueden seguir en inglés.
+
+### OCR (PDF escaneados)
+- Los PDF sin capa de texto se leen con **rapidocr-onnxruntime** (opcional,
+  CPU, sin permisos de administrador) renderizando a 250 ppp.
+  Instalación: `pip install -r requirements-ocr.txt`.
+- Si el motor no está instalado, el error indica el comando exacto
+  (`pip install rapidocr-onnxruntime`); docx→imagen sigue funcionando sin OCR.
+- Con el motor instalado, el catálogo lo anuncia y las salidas txt/docx
+  recuperan el texto de documentos escaneados.
+
+### Corrección
+- Memoria de los editores de foto: los lienzos de Recortar, Censurar y Anotar
+  ya no conservan el mapa de bits a resolución completa; se muestra una copia
+  reducida a la vez que el mapeo y la exportación siguen en píxeles reales.
+- Recorte de imagen: la exportación vuelve a ser a resolución completa
+  (regresión cubierta por pruebas de memoria y de recorte).
+
+### Vídeo
+- Visualizador de audio: el MP4 generado incluye la pista de audio y los
+  vídeos sin audio fallan con un mensaje claro antes de invocar a FFmpeg.
+
+### Empaquetado
+- Flujo de empaquetado listo para Windows: `packaging\build.ps1` (PyInstaller
+  onedir + ZIP portátil e instalador Inno Setup 6 cuando ISCC está presente),
+  `packaging\tangerine.spec`, `packaging\installer.iss` y
+  `packaging\version_info.txt`, además del flujo de compilación del instalador.
+
+### Verificación (todo en verde)
+- **85 pruebas** (77 existentes + 8 de i18n), incluida la paridad inglés/español
+  (>150 claves), el formato con argumentos y la resolución `"system"` con
+  locale no soportado.
+- Auditoría de rutas: 43/43 identificadores de herramientas sin mensajes de
+  "no disponible".
+- Smoke de editores: 23/23 diálogos se construyen en modo offscreen, también
+  con la interfaz en español.
+
 ## 1.5.0 — 2026-09-16
 
 Nueva familia **Documentos** en la rueda de conversiones: ocho formatos (docx,

@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from . import engines, settings, tools
+from . import engines, i18n, settings, tools
 from .jobs import Job, batch_ctx
 from .progress import ProgressWindow, run_job
 
@@ -32,9 +32,9 @@ def run_conversions(file_paths, target, parent=None, label=None):
     if label:
         title = label
     elif len(paths) == 1:
-        title = f"{paths[0].name} → {target.upper()}"
+        title = i18n.tr("action.file_to", name=paths[0].name, target=target.upper())
     else:
-        title = f"Converting {len(paths)} files to {target.upper()}"
+        title = i18n.tr("action.converting_many", n=len(paths), target=target.upper())
     reserved: set[str] = set()
 
     def work(ctx):
@@ -43,9 +43,12 @@ def run_conversions(file_paths, target, parent=None, label=None):
         for index, path in enumerate(paths):
             fctx = batch_ctx(ctx, total, index) if total > 1 else ctx
             if total > 1:
-                ctx.status(f"Converting {path.name} ({index + 1} of {total})")
+                ctx.status(i18n.tr(
+                    "action.converting_progress",
+                    name=path.name, index=index + 1, total=total,
+                ))
             else:
-                ctx.status(f"Converting {path.name}")
+                ctx.status(i18n.tr("action.converting_file", name=path.name))
             outputs.extend(engines.convert_single(path, target, fctx, reserved))
         return outputs
 
@@ -63,21 +66,21 @@ def _clean_text(path, ctx, reserved):
     while "\n\n\n" in cleaned:
         cleaned = cleaned.replace("\n\n\n", "\n\n")
     out = tools._unique(source.parent, source.stem, " Clean.txt", reserved)
-    ctx.status(f"Cleaning {source.name}")
+    ctx.status(i18n.tr("action.cleaning", name=source.name))
     out.write_text(cleaned, encoding="utf-8")
     return [out]
 
 
 _DIRECT = {
-    "arc.extract": ("Extracting archive", lambda paths, ctx, reserved: [engines.extract_archive(paths[0], ctx, reserved)]),
-    "pdf.merge": ("Merging PDFs", lambda paths, ctx, reserved: [tools.merge_pdfs(paths, ctx, reserved)]),
-    "pdf.split": ("Splitting PDF", lambda paths, ctx, reserved: [tools.split_pdf(paths[0], ctx, reserved)]),
-    "img.pdf": ("Creating PDF", lambda paths, ctx, reserved: [engines.images_to_pdf(paths, ctx, reserved)]),
-    "vid.removeaudio": ("Removing audio", lambda paths, ctx, reserved: [tools.remove_audio(paths[0], ctx, reserved)]),
-    "aud.normalize": ("Normalizing volume", lambda paths, ctx, reserved: [tools.normalize_audio(paths[0], ctx, reserved)]),
-    "txt.compress": ("Tidying text", lambda paths, ctx, reserved: _clean_text(paths[0], ctx, reserved)),
-    "pdf.compress": ("Compressing PDF", lambda paths, ctx, reserved: [tools.compress_pdf(paths[0], ctx, reserved)]),
-    "doc.compress": ("Compressing document", lambda paths, ctx, reserved: [tools.compress_document(paths[0], ctx, reserved)]),
+    "arc.extract": ("action.extracting_archive", lambda paths, ctx, reserved: [engines.extract_archive(paths[0], ctx, reserved)]),
+    "pdf.merge": ("action.merging_pdfs", lambda paths, ctx, reserved: [tools.merge_pdfs(paths, ctx, reserved)]),
+    "pdf.split": ("action.splitting_pdf", lambda paths, ctx, reserved: [tools.split_pdf(paths[0], ctx, reserved)]),
+    "img.pdf": ("action.creating_pdf", lambda paths, ctx, reserved: [engines.images_to_pdf(paths, ctx, reserved)]),
+    "vid.removeaudio": ("action.removing_audio", lambda paths, ctx, reserved: [tools.remove_audio(paths[0], ctx, reserved)]),
+    "aud.normalize": ("action.normalizing_volume", lambda paths, ctx, reserved: [tools.normalize_audio(paths[0], ctx, reserved)]),
+    "txt.compress": ("action.tidying_text", lambda paths, ctx, reserved: _clean_text(paths[0], ctx, reserved)),
+    "pdf.compress": ("action.compressing_pdf", lambda paths, ctx, reserved: [tools.compress_pdf(paths[0], ctx, reserved)]),
+    "doc.compress": ("action.compressing_document", lambda paths, ctx, reserved: [tools.compress_document(paths[0], ctx, reserved)]),
 }
 
 
@@ -91,9 +94,9 @@ def run_tool(file_paths, key, parent=None, label=None):
 
     entry = _DIRECT.get(key)
     if entry is not None:
-        title, fn = entry
+        title_key, fn = entry
         reserved: set[str] = set()
-        return run_job(label or title, lambda ctx: fn(paths, ctx, reserved), parent)
+        return run_job(label or i18n.tr(title_key), lambda ctx: fn(paths, ctx, reserved), parent)
 
     family = _COMPRESS_KEYS.get(key)
     if family is not None:
@@ -110,8 +113,8 @@ def _lazy(parent, call):
 
         QMessageBox.information(
             parent,
-            "Tangerine",
-            "This tool needs the optional editor module, which is not available in this build.",
+            i18n.tr("app.name"),
+            i18n.tr("action.optional_editor_missing"),
         )
         return None
 
@@ -119,13 +122,14 @@ def _lazy(parent, call):
 class ResultsWindow(QDialog):
     def __init__(self, results, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("QR Codes")
+        self.setWindowTitle(i18n.tr("action.qr_title"))
         self.setMinimumSize(520, 420)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(18, 18, 18, 18)
         layout.setSpacing(10)
 
-        heading = QLabel("Decoded results" if results else "No QR codes were found.")
+        heading = QLabel(i18n.tr(
+            "action.qr_results" if results else "action.qr_empty"))
         heading.setStyleSheet("font-weight: 600; font-size: 14px;")
         layout.addWidget(heading)
 
@@ -149,7 +153,7 @@ class ResultsWindow(QDialog):
             body.setFixedHeight(72)
             row = QHBoxLayout()
             row.addStretch(1)
-            copy = QPushButton("Copy")
+            copy = QPushButton(i18n.tr("action.copy"))
             copy.setProperty("flat", True)
             copy.clicked.connect(lambda _=False, t=text: _copy(t))
             row.addWidget(copy)
@@ -165,11 +169,11 @@ class ResultsWindow(QDialog):
 
         footer = QHBoxLayout()
         footer.addStretch(1)
-        copy_all = QPushButton("Copy All")
+        copy_all = QPushButton(i18n.tr("action.copy_all"))
         copy_all.setProperty("accent", True)
         copy_all.clicked.connect(lambda: _copy("\n".join(all_text)))
         copy_all.setEnabled(bool(all_text))
-        close = QPushButton("Done")
+        close = QPushButton(i18n.tr("action.done"))
         close.setProperty("flat", True)
         close.clicked.connect(self.accept)
         footer.addWidget(copy_all)
@@ -187,12 +191,12 @@ def _run_qr(paths, parent):
     holder = {}
 
     def work(ctx):
-        ctx.status("Scanning for QR codes...")
+        ctx.status(i18n.tr("action.scanning_qr"))
         holder["results"] = tools.read_qr_codes(paths, ctx)
         return list(paths)
 
     job = Job(work, parent)
-    window = ProgressWindow("Read QR Codes", job, parent)
+    window = ProgressWindow(i18n.tr("action.read_qr"), job, parent)
     window.show()
     job.finished.connect(lambda _results: ResultsWindow(holder.get("results", []), None).exec())
     job.start()

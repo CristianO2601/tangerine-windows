@@ -7,6 +7,8 @@ import shutil
 import tempfile
 from pathlib import Path
 
+from PIL import ImageOps
+
 from PySide6.QtCore import QPointF, QSize, Qt, QTimer
 from PySide6.QtGui import QColor, QPainter, QPixmap
 from PySide6.QtWidgets import (
@@ -28,7 +30,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .. import progress, settings, tools
+from .. import i18n, progress, settings, tools
 from .base import ToolDialog, pil_to_qimage, run_batch
 from .ui.canvas import AnnotateCanvas, CropCanvas, RedactCanvas, _draw_op
 
@@ -39,12 +41,13 @@ from .ui.canvas import AnnotateCanvas, CropCanvas, RedactCanvas, _draw_op
 
 class CompressDialog(ToolDialog):
     def __init__(self, paths, family: str, parent: QWidget | None = None):
-        super().__init__("Compress", parent)
+        super().__init__(i18n.tr("dlg.compress.title"), parent)
         self._paths = [Path(p) for p in paths]
         self._family = family
         count = len(self._paths)
         heading = QLabel(
-            self._paths[0].name if count == 1 else f"{count} files"
+            self._paths[0].name if count == 1
+            else i18n.tr("dlg.count_files", count=count)
         )
         heading.setProperty("dim", True)
         self._body.addWidget(heading)
@@ -52,16 +55,16 @@ class CompressDialog(ToolDialog):
         form = QFormLayout()
         form.setSpacing(10)
         self.strength = QComboBox()
-        self.strength.addItems(["Balanced", "Strong"])
-        form.addRow("Compression preset", self.strength)
+        self.strength.addItems([i18n.tr("opt.balanced"), i18n.tr("opt.strong")])
+        form.addRow(i18n.tr("lbl.compression_preset"), self.strength)
 
         self.size = QComboBox()
-        self.size.addItems(["Original dimensions", "Limit to 2560 px",
-                            "Limit to 1920 px", "Limit to 1280 px"])
+        self.size.addItems([i18n.tr("opt.original"), i18n.tr("opt.limit_2560"),
+                            i18n.tr("opt.limit_1920"), i18n.tr("opt.limit_1280")])
         self.size_row = self.size
-        form.addRow("Dimensions", self.size)
+        form.addRow(i18n.tr("lbl.dimensions"), self.size)
 
-        self.target_check = QCheckBox("Compress to target file size")
+        self.target_check = QCheckBox(i18n.tr("dlg.compress.target"))
         self.target_kb = QSpinBox()
         self.target_kb.setRange(1, 1024 * 1024)
         self.target_kb.setValue(500)
@@ -71,11 +74,7 @@ class CompressDialog(ToolDialog):
         form.addRow(self.target_check, self.target_kb)
         self._body.addLayout(form)
 
-        note = QLabel(
-            "Balanced targets about 20% savings with less quality loss. "
-            "Strong targets about 50%. The original bytes are kept whenever "
-            "re-encoding would make the file larger."
-        )
+        note = QLabel(i18n.tr("dlg.compress.note"))
         note.setWordWrap(True)
         note.setProperty("dim", True)
         self._body.addWidget(note)
@@ -92,7 +91,7 @@ class CompressDialog(ToolDialog):
             self.target_kb.setVisible(False)
             key = "defaultVideoCompressionStrength" if family == "video" else "defaultAudioCompressionStrength"
             self.strength.setCurrentIndex(1 if settings.get(key) == "strong" else 0)
-        self.add_buttons("Compress")
+        self.add_buttons(i18n.tr("dlg.compress.title"))
 
     def save_defaults(self) -> None:
         strength = "strong" if self.strength.currentIndex() == 1 else "balanced"
@@ -118,13 +117,13 @@ class CompressDialog(ToolDialog):
 
         if self._family == "image":
             run_batch(self._paths, lambda p, ctx, reserved: tools.compress_image(
-                p, strength, max_edge, target, ctx, reserved), "Compressing")
+                p, strength, max_edge, target, ctx, reserved), i18n.tr("action.compressing_generic"))
         elif self._family == "video":
             run_batch(self._paths, lambda p, ctx, reserved: tools.compress_video(
-                p, strength, ctx, reserved), "Compressing")
+                p, strength, ctx, reserved), i18n.tr("action.compressing_generic"))
         else:
             run_batch(self._paths, lambda p, ctx, reserved: tools.compress_audio(
-                p, strength, ctx, reserved), "Compressing")
+                p, strength, ctx, reserved), i18n.tr("action.compressing_generic"))
         self.accept()
 
 
@@ -134,7 +133,7 @@ class CompressDialog(ToolDialog):
 
 class CollageDialog(ToolDialog):
     def __init__(self, paths, parent: QWidget | None = None):
-        super().__init__("Create Collage", parent)
+        super().__init__(i18n.tr("dlg.collage.title"), parent)
         self._paths = [Path(p) for p in paths]
         self._thumb_dir = Path(tempfile.mkdtemp(prefix="tangerine_collage_"))
         self._thumbs: dict[Path, Path] = {}
@@ -151,32 +150,35 @@ class CollageDialog(ToolDialog):
         form = QFormLayout()
         form.setSpacing(9)
         self.layout_combo = QComboBox()
-        self.layout_combo.addItems(["Grid", "Horizontal", "Vertical", "Featured"])
-        form.addRow("Layout", self.layout_combo)
+        self.layout_combo.addItems([i18n.tr("opt.grid"), i18n.tr("opt.horizontal"),
+                                    i18n.tr("opt.vertical"), i18n.tr("opt.featured")])
+        form.addRow(i18n.tr("lbl.layout"), self.layout_combo)
 
         self.resolution = QComboBox()
-        self.resolution.addItems(["Source size", "2000 px", "1500 px", "1080 px"])
-        form.addRow("Image area", self.resolution)
+        self.resolution.addItems([i18n.tr("opt.source_size"), i18n.tr("opt.px2000"),
+                                  i18n.tr("opt.px1500"), i18n.tr("opt.px1080")])
+        form.addRow(i18n.tr("lbl.image_area"), self.resolution)
 
         self.fit = QComboBox()
-        self.fit.addItems(["Fill cell", "Contain"])
-        form.addRow("Image fit", self.fit)
+        self.fit.addItems([i18n.tr("opt.fill"), i18n.tr("opt.contain")])
+        form.addRow(i18n.tr("lbl.image_fit"), self.fit)
 
         self.spacing = QSpinBox()
         self.spacing.setRange(0, 96)
-        form.addRow("Spacing", self.spacing)
+        form.addRow(i18n.tr("lbl.spacing"), self.spacing)
 
         self.padding = QSpinBox()
         self.padding.setRange(0, 160)
-        form.addRow("Padding", self.padding)
+        form.addRow(i18n.tr("lbl.padding"), self.padding)
 
         self.radius = QSpinBox()
         self.radius.setRange(0, 64)
-        form.addRow("Rounded corners", self.radius)
+        form.addRow(i18n.tr("lbl.rounded_corners"), self.radius)
 
         self.background = QComboBox()
-        self.background.addItems(["White", "Black", "Transparent"])
-        form.addRow("Background", self.background)
+        self.background.addItems([i18n.tr("opt.white"), i18n.tr("opt.black"),
+                                  i18n.tr("opt.transparent")])
+        form.addRow(i18n.tr("lbl.background"), self.background)
         top.addLayout(form)
 
         self.preview = QLabel()
@@ -189,14 +191,14 @@ class CollageDialog(ToolDialog):
         top.addWidget(self.preview)
         self._body.addLayout(top)
 
-        order_group = QGroupBox("Order")
+        order_group = QGroupBox(i18n.tr("lbl.order"))
         order_layout = QHBoxLayout(order_group)
         self.order_list = QListWidget()
         self.order_list.setFixedHeight(96)
         order_layout.addWidget(self.order_list, 1)
         buttons = QVBoxLayout()
-        up = QPushButton("Move up")
-        down = QPushButton("Move down")
+        up = QPushButton(i18n.tr("btn.move_up"))
+        down = QPushButton(i18n.tr("btn.move_down"))
         up.clicked.connect(lambda: self._move(-1))
         down.clicked.connect(lambda: self._move(1))
         buttons.addWidget(up)
@@ -240,7 +242,7 @@ class CollageDialog(ToolDialog):
             widget.valueChanged.connect(self._queue_preview)
         self.order_list.model().rowsMoved.connect(self._queue_preview)
 
-        self.add_buttons("Create Collage")
+        self.add_buttons(i18n.tr("dlg.collage.title"))
         QTimer.singleShot(80, self._refresh_preview)
 
     def _make_thumbs(self) -> None:
@@ -321,7 +323,7 @@ class CollageDialog(ToolDialog):
                     Qt.AspectRatioMode.KeepAspectRatio,
                     Qt.TransformationMode.SmoothTransformation))
         except Exception:
-            self.preview.setText("Preview unavailable")
+            self.preview.setText(i18n.tr("msg.preview_unavailable"))
 
     def closeEvent(self, event) -> None:  # noqa: N802
         self._cleanup_thumbs()
@@ -350,7 +352,7 @@ class CollageDialog(ToolDialog):
         self.save_defaults()
         options = self._options()
         ordered = self._ordered_paths()
-        progress.run_job("Building collage", lambda ctx: [
+        progress.run_job(i18n.tr("action.building_collage"), lambda ctx: [
             tools.make_collage(ordered, options, ctx, set())
         ])
         self.accept()
@@ -362,7 +364,7 @@ class CollageDialog(ToolDialog):
 
 class CropImageDialog(ToolDialog):
     def __init__(self, path, parent: QWidget | None = None):
-        super().__init__("Crop", parent)
+        super().__init__(i18n.tr("dlg.crop.title"), parent)
         self._path = Path(path)
         self.canvas = CropCanvas(self._path)
         self.canvas.setFixedSize(620, 420)
@@ -370,22 +372,22 @@ class CropImageDialog(ToolDialog):
 
         row = QHBoxLayout()
         self.aspect = QComboBox()
-        self.aspect.addItems(["Free", "1:1", "3:2", "4:3", "16:9", "9:16"])
-        row.addWidget(QLabel("Aspect"))
+        self.aspect.addItems([i18n.tr("opt.free"), "1:1", "3:2", "4:3", "16:9", "9:16"])
+        row.addWidget(QLabel(i18n.tr("lbl.aspect")))
         row.addWidget(self.aspect)
         row.addSpacing(12)
         self.w_spin = QSpinBox()
-        self.w_spin.setRange(1, self.canvas.image.width)
-        self.w_spin.setValue(self.canvas.image.width)
+        self.w_spin.setRange(1, self.canvas.image_size[0])
+        self.w_spin.setValue(self.canvas.image_size[0])
         self.h_spin = QSpinBox()
-        self.h_spin.setRange(1, self.canvas.image.height)
-        self.h_spin.setValue(self.canvas.image.height)
-        row.addWidget(QLabel("W"))
+        self.h_spin.setRange(1, self.canvas.image_size[1])
+        self.h_spin.setValue(self.canvas.image_size[1])
+        row.addWidget(QLabel(i18n.tr("lbl.w")))
         row.addWidget(self.w_spin)
-        row.addWidget(QLabel("H"))
+        row.addWidget(QLabel(i18n.tr("lbl.h")))
         row.addWidget(self.h_spin)
         row.addStretch(1)
-        reset = QPushButton("Select All")
+        reset = QPushButton(i18n.tr("btn.select_all"))
         reset.clicked.connect(self._select_all)
         row.addWidget(reset)
         self._body.addLayout(row)
@@ -394,12 +396,13 @@ class CropImageDialog(ToolDialog):
         self.w_spin.valueChanged.connect(self._size_changed)
         self.h_spin.valueChanged.connect(self._size_changed)
         self.aspect.currentIndexChanged.connect(self._aspect_changed)
-        self.add_buttons("Crop")
+        self.add_buttons(i18n.tr("dlg.crop.title"))
 
     def _select_all(self) -> None:
-        self.canvas.rect = [0.0, 0.0, float(self.canvas.image.width), float(self.canvas.image.height)]
-        self.w_spin.setValue(self.canvas.image.width)
-        self.h_spin.setValue(self.canvas.image.height)
+        self.canvas.rect = [0.0, 0.0, float(self.canvas.image_size[0]),
+                            float(self.canvas.image_size[1])]
+        self.w_spin.setValue(self.canvas.image_size[0])
+        self.h_spin.setValue(self.canvas.image_size[1])
         self.canvas.update()
 
     def _rect_changed(self, rect) -> None:
@@ -423,7 +426,7 @@ class CropImageDialog(ToolDialog):
         ratio = ratios[self.aspect.currentIndex()]
         if ratio is None:
             return
-        img_w, img_h = self.canvas.image.width, self.canvas.image.height
+        img_w, img_h = self.canvas.image_size
         cx, cy = img_w / 2, img_h / 2
         w = min(img_w, img_h * ratio)
         h = w / ratio
@@ -436,12 +439,15 @@ class CropImageDialog(ToolDialog):
 
     def _accept_clicked(self) -> None:
         x, y, w, h = self.canvas.rect
-        box = (int(round(x)), int(round(y)), int(round(w)), int(round(h)))
+        box = (int(round(x)), int(round(y)),
+               int(round(x + w)), int(round(y + h)))
         if box[2] < 2 or box[3] < 2:
-            QMessageBox.warning(self, "Crop", "Select a crop area first.")
+            QMessageBox.warning(
+                self, i18n.tr("dlg.crop.title"),
+                i18n.tr("msg.crop.need_area"))
             return
         progress.run_job(
-            f"Cropping {self._path.name}",
+            i18n.tr("action.cropping", name=self._path.name),
             lambda ctx: [tools.crop_image(self._path, box, ctx, set())],
         )
         self.accept()
@@ -453,7 +459,7 @@ class CropImageDialog(ToolDialog):
 
 class RedactPhotoDialog(ToolDialog):
     def __init__(self, path, parent: QWidget | None = None):
-        super().__init__("Redact Photo", parent)
+        super().__init__(i18n.tr("dlg.redact.title"), parent)
         self._path = Path(path)
         self.canvas = RedactCanvas(self._path)
         self.canvas.setFixedSize(620, 420)
@@ -461,10 +467,10 @@ class RedactPhotoDialog(ToolDialog):
 
         row = QHBoxLayout()
         self.mode = QComboBox()
-        self.mode.addItems(["Solid", "Blur"])
-        row.addWidget(QLabel("Effect"))
+        self.mode.addItems([i18n.tr("opt.solid"), i18n.tr("opt.blur")])
+        row.addWidget(QLabel(i18n.tr("lbl.effect")))
         row.addWidget(self.mode)
-        self.color_button = QPushButton("Color")
+        self.color_button = QPushButton(i18n.tr("btn.color"))
         self.color_button.clicked.connect(self._pick_color)
         self._color = QColor("#000000")
         self._sync_color()
@@ -472,26 +478,27 @@ class RedactPhotoDialog(ToolDialog):
         self.mode.currentIndexChanged.connect(
             lambda: self.color_button.setEnabled(self.mode.currentIndex() == 0))
         row.addStretch(1)
-        detect = QPushButton("Detect Faces")
+        detect = QPushButton(i18n.tr("btn.detect_faces"))
         detect.clicked.connect(self._detect_faces)
         row.addWidget(detect)
-        remove = QPushButton("Remove Selected")
+        remove = QPushButton(i18n.tr("btn.remove_selected"))
         remove.clicked.connect(self._remove_selected)
         row.addWidget(remove)
         self._body.addLayout(row)
 
-        hint = QLabel("Drag on the photo to draw a redaction box. Select a box and press Delete to remove it.")
+        hint = QLabel(i18n.tr("dlg.redact.hint"))
         hint.setProperty("dim", True)
         hint.setWordWrap(True)
         self._body.addWidget(hint)
-        self.add_buttons("Save Redacted Copy")
+        self.add_buttons(i18n.tr("btn.save_redacted"))
 
     def _sync_color(self) -> None:
         self.color_button.setStyleSheet(
             f"border-left: 16px solid {self._color.name()}; padding-left: 8px;")
 
     def _pick_color(self) -> None:
-        chosen = QColorDialog.getColor(self._color, self, "Redaction Color")
+        chosen = QColorDialog.getColor(
+            self._color, self, i18n.tr("dlg.redact.color_title"))
         if chosen.isValid():
             self._color = chosen
             self._sync_color()
@@ -503,10 +510,12 @@ class RedactPhotoDialog(ToolDialog):
         try:
             faces = tools.detect_faces(self._path)
         except Exception as error:
-            QMessageBox.warning(self, "Detect Faces", str(error))
+            QMessageBox.warning(self, i18n.tr("btn.detect_faces"), str(error))
             return
         if not faces:
-            QMessageBox.information(self, "Detect Faces", "No faces were detected.")
+            QMessageBox.information(
+            self, i18n.tr("btn.detect_faces"),
+            i18n.tr("dlg.redact.no_faces"))
             return
         for x, y, w, h in faces:
             self.canvas.boxes.append({
@@ -523,7 +532,9 @@ class RedactPhotoDialog(ToolDialog):
 
     def _accept_clicked(self) -> None:
         if not self.canvas.boxes:
-            QMessageBox.warning(self, "Redact Photo", "Draw at least one redaction box.")
+            QMessageBox.warning(
+            self, i18n.tr("dlg.redact.title"),
+            i18n.tr("dlg.redact.need_box"))
             return
         mode = "solid" if self.mode.currentIndex() == 0 else "blur"
         boxes = [
@@ -532,7 +543,7 @@ class RedactPhotoDialog(ToolDialog):
             for b in self.canvas.boxes
         ]
         progress.run_job(
-            f"Redacting {self._path.name}",
+            i18n.tr("action.redacting", name=self._path.name),
             lambda ctx: [tools.redact_photo(self._path, boxes, ctx, set())],
         )
         self.accept()
@@ -544,7 +555,7 @@ class RedactPhotoDialog(ToolDialog):
 
 class BackgroundDialog(ToolDialog):
     def __init__(self, path, parent: QWidget | None = None):
-        super().__init__("Add Background", parent)
+        super().__init__(i18n.tr("dlg.background.title"), parent)
         self._path = Path(path)
         self._color = QColor("#FFFFFF")
         image = tools.load_image(self._path)
@@ -555,20 +566,19 @@ class BackgroundDialog(ToolDialog):
         self.color_button = QPushButton()
         self.color_button.clicked.connect(self._pick_color)
         self._sync_color()
-        form.addRow("Background", self.color_button)
+        form.addRow(i18n.tr("lbl.background"), self.color_button)
         self.margin = QSpinBox()
         self.margin.setRange(0, 512)
         self.margin.setValue(0)
         self.margin.setSuffix(" px")
-        form.addRow("Margin", self.margin)
+        form.addRow(i18n.tr("lbl.margin"), self.margin)
         self._body.addLayout(form)
 
-        note = QLabel("The image is centered on a canvas of the chosen color. "
-                      "Transparent areas show the background.")
+        note = QLabel(i18n.tr("dlg.background.note"))
         note.setProperty("dim", True)
         note.setWordWrap(True)
         self._body.addWidget(note)
-        self.add_buttons("Save with Background")
+        self.add_buttons(i18n.tr("btn.save_background"))
 
     def _sync_color(self) -> None:
         self.color_button.setStyleSheet(
@@ -576,7 +586,8 @@ class BackgroundDialog(ToolDialog):
         self.color_button.setText(self._color.name())
 
     def _pick_color(self) -> None:
-        chosen = QColorDialog.getColor(self._color, self, "Background Color")
+        chosen = QColorDialog.getColor(
+            self._color, self, i18n.tr("dlg.background.color_title"))
         if chosen.isValid():
             self._color = chosen
             self._sync_color()
@@ -586,7 +597,7 @@ class BackgroundDialog(ToolDialog):
         width = self._img_w + margin * 2
         height = self._img_h + margin * 2
         progress.run_job(
-            f"Adding background to {self._path.name}",
+            i18n.tr("action.adding_background_to", name=self._path.name),
             lambda ctx: [tools.add_background(
                 self._path, self._color.name(), width, height, ctx, set())],
         )
@@ -599,9 +610,10 @@ class BackgroundDialog(ToolDialog):
 
 class EditPhotoDialog(ToolDialog):
     def __init__(self, path, parent: QWidget | None = None):
-        super().__init__("Edit Photo", parent)
+        super().__init__(i18n.tr("dlg.edit.title"), parent)
         self._path = Path(path)
         self._image = tools.load_image(self._path)
+        self._image.thumbnail((520, 290))
         self._preview_timer = QTimer(self)
         self._preview_timer.setSingleShot(True)
         self._preview_timer.setInterval(140)
@@ -633,13 +645,13 @@ class EditPhotoDialog(ToolDialog):
             form.addRow(label, row)
             return slider
 
-        self.brightness = slider_row("Brightness", 40, 160, 100)
-        self.contrast = slider_row("Contrast", 40, 160, 100)
-        self.saturation = slider_row("Saturation", 0, 200, 100)
-        self.sharpness = slider_row("Sharpness", 0, 300, 100)
+        self.brightness = slider_row(i18n.tr("lbl.brightness"), 40, 160, 100)
+        self.contrast = slider_row(i18n.tr("lbl.contrast"), 40, 160, 100)
+        self.saturation = slider_row(i18n.tr("lbl.saturation"), 0, 200, 100)
+        self.sharpness = slider_row(i18n.tr("lbl.sharpness"), 0, 300, 100)
         self._body.addLayout(form)
 
-        self.add_buttons("Save Copy")
+        self.add_buttons(i18n.tr("btn.save_copy"))
         QTimer.singleShot(60, self._refresh_preview)
 
     def _enhanced(self, image):
@@ -670,7 +682,7 @@ class EditPhotoDialog(ToolDialog):
             from PIL import ImageEnhance
 
             image = tools.load_image(path)
-            ctx.status(f"Editing {path.name}")
+            ctx.status(i18n.tr("action.editing", name=path.name))
             image = ImageEnhance.Brightness(image).enhance(values[0] / 100.0)
             image = ImageEnhance.Contrast(image).enhance(values[1] / 100.0)
             image = ImageEnhance.Color(image).enhance(values[2] / 100.0)
@@ -680,7 +692,7 @@ class EditPhotoDialog(ToolDialog):
             ctx.progress(1.0)
             return [out]
 
-        progress.run_job(f"Editing {path.name}", work)
+        progress.run_job(i18n.tr("action.editing", name=path.name), work)
         self.accept()
 
 
@@ -688,9 +700,26 @@ class EditPhotoDialog(ToolDialog):
 # Annotate photo
 # ---------------------------------------------------------------------------
 
+def render_annotations(path: Path, ops: list[dict]) -> Path:
+    """Render annotation ops onto a transient full-resolution copy of *path*."""
+    full = tools.load_image(path)
+    if full.getexif().get(274, 1) != 1:
+        full = ImageOps.exif_transpose(full)
+    qimage = pil_to_qimage(full)
+    del full
+    painter = QPainter(qimage)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+    for op in ops:
+        _draw_op(painter, op, 1.0, QPointF(0.0, 0.0))
+    painter.end()
+    out = tools._unique(path.parent, f"{path.stem} Annotated", ".png", set())
+    qimage.save(str(out), "PNG")
+    return out
+
+
 class AnnotateDialog(ToolDialog):
     def __init__(self, path, parent: QWidget | None = None):
-        super().__init__("Annotate Photo", parent)
+        super().__init__(i18n.tr("dlg.annotate.title"), parent)
         self._path = Path(path)
         self.canvas = AnnotateCanvas(self._path)
         self.canvas.setFixedSize(620, 420)
@@ -698,9 +727,13 @@ class AnnotateDialog(ToolDialog):
 
         row = QHBoxLayout()
         self.tool_buttons = {}
-        for key, label in (("arrow", "Arrow"), ("pen", "Draw"), ("rect", "Rect"),
-                           ("ellipse", "Ellipse"), ("text", "Text"),
-                           ("highlight", "Highlight"), ("callout", "Number")):
+        for key, label in (
+                ("arrow", i18n.tr("opt.arrow")), ("pen", i18n.tr("opt.pen")),
+                ("rect", i18n.tr("opt.rect")), ("ellipse", i18n.tr("opt.ellipse")),
+                ("text", i18n.tr("opt.text")),
+                ("highlight", i18n.tr("opt.highlight")),
+                ("callout", i18n.tr("opt.callout"))
+        ):
             button = QPushButton(label)
             button.setCheckable(True)
             button.clicked.connect(lambda _=False, k=key: self._select_tool(k))
@@ -708,10 +741,10 @@ class AnnotateDialog(ToolDialog):
             row.addWidget(button)
         self.tool_buttons["arrow"].setChecked(True)
         row.addStretch(1)
-        color_button = QPushButton("Color")
+        color_button = QPushButton(i18n.tr("btn.color"))
         color_button.clicked.connect(self._pick_color)
         row.addWidget(color_button)
-        row.addWidget(QLabel("Size"))
+        row.addWidget(QLabel(i18n.tr("lbl.size")))
         self.width_slider = QSlider(Qt.Orientation.Horizontal)
         self.width_slider.setRange(1, 12)
         self.width_slider.setValue(3)
@@ -722,9 +755,9 @@ class AnnotateDialog(ToolDialog):
         self._body.addLayout(row)
 
         bottom = QHBoxLayout()
-        undo = QPushButton("Undo")
+        undo = QPushButton(i18n.tr("btn.undo"))
         undo.clicked.connect(self.canvas.undo)
-        reset = QPushButton("Reset")
+        reset = QPushButton(i18n.tr("btn.reset"))
         reset.clicked.connect(self.canvas.reset_ops)
         bottom.addWidget(undo)
         bottom.addWidget(reset)
@@ -732,7 +765,7 @@ class AnnotateDialog(ToolDialog):
         self._body.addLayout(bottom)
         self._color_button = color_button
         self._sync_color()
-        self.add_buttons("Save Annotated Copy")
+        self.add_buttons(i18n.tr("btn.save_annotated"))
 
     def _select_tool(self, key: str) -> None:
         self.canvas.tool = key
@@ -744,32 +777,29 @@ class AnnotateDialog(ToolDialog):
             f"border-left: 16px solid {self.canvas.color}; padding-left: 8px;")
 
     def _pick_color(self) -> None:
-        chosen = QColorDialog.getColor(QColor(self.canvas.color), self, "Annotation Color")
+        chosen = QColorDialog.getColor(
+            QColor(self.canvas.color), self,
+            i18n.tr("dlg.annotate.color_title"))
         if chosen.isValid():
             self.canvas.color = chosen.name()
             self._sync_color()
 
     def _accept_clicked(self) -> None:
         if not self.canvas.ops:
-            QMessageBox.warning(self, "Annotate Photo", "Add at least one annotation.")
+            QMessageBox.warning(
+            self, i18n.tr("dlg.annotate.title"),
+            i18n.tr("dlg.annotate.need_op"))
             return
         path = self._path
         ops = list(self.canvas.ops)
 
         def work(ctx):
-            ctx.status(f"Rendering annotations for {path.name}")
-            qimage = pil_to_qimage(self.canvas.image)
-            painter = QPainter(qimage)
-            painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-            for op in ops:
-                _draw_op(painter, op, 1.0, QPointF(0.0, 0.0))
-            painter.end()
-            out = tools._unique(path.parent, f"{path.stem} Annotated", ".png", set())
-            qimage.save(str(out), "PNG")
+            ctx.status(i18n.tr("action.rendering_annotations", name=path.name))
+            out = render_annotations(path, ops)
             ctx.progress(1.0)
             return [out]
 
-        progress.run_job(f"Annotating {path.name}", work)
+        progress.run_job(i18n.tr("action.annotating", name=path.name), work)
         self.accept()
 
 
@@ -781,14 +811,15 @@ class MetadataDialog(ToolDialog):
     EDITABLE = {name: tag for tag, name in tools.EXIF_TAGS.items()}
 
     def __init__(self, path, parent: QWidget | None = None):
-        super().__init__("Metadata", parent)
+        super().__init__(i18n.tr("dlg.metadata.title"), parent)
         self._path = Path(path)
         self._rows = tools.read_metadata(self._path)
 
         from PySide6.QtWidgets import QTableWidget, QTableWidgetItem
 
         self.table = QTableWidget(len(self._rows), 2)
-        self.table.setHorizontalHeaderLabels(["Field", "Value"])
+        self.table.setHorizontalHeaderLabels(
+            [i18n.tr("lbl.field"), i18n.tr("lbl.value")])
         self.table.verticalHeader().setVisible(False)
         self.table.setMinimumSize(560, 360)
         for row, (name, value) in enumerate(self._rows):
@@ -804,12 +835,16 @@ class MetadataDialog(ToolDialog):
         self._body.addWidget(self._status)
 
         box = QDialogButtonBox()
-        save = box.addButton("Save Copy", QDialogButtonBox.ButtonRole.AcceptRole)
+        save = box.addButton(
+            i18n.tr("btn.save_copy"), QDialogButtonBox.ButtonRole.AcceptRole)
         save.setProperty("accent", True)
         if self._can_strip():
-            remove_all = box.addButton("Remove All", QDialogButtonBox.ButtonRole.DestructiveRole)
+            remove_all = box.addButton(
+                i18n.tr("btn.remove_all"),
+                QDialogButtonBox.ButtonRole.DestructiveRole)
             remove_all.clicked.connect(self._remove_all)
-        close = box.addButton("Close", QDialogButtonBox.ButtonRole.RejectRole)
+        close = box.addButton(
+            i18n.tr("btn.close"), QDialogButtonBox.ButtonRole.RejectRole)
         save.clicked.connect(self._save_copy)
         close.clicked.connect(self.reject)
         self._body.addWidget(box)
@@ -821,15 +856,13 @@ class MetadataDialog(ToolDialog):
     def _refresh_status(self) -> None:
         ext = self._path.suffix.lower()
         if ext in (".jpg", ".jpeg", ".png", ".tiff", ".tif", ".webp", ".heic", ".heif"):
-            self._status.setText(
-                f"Editing metadata writes a separate copy: {self._path.stem} Metadata{self._path.suffix}. "
-                "Fields not listed here are preserved.")
+            self._status.setText(i18n.tr(
+                "dlg.metadata.status_image",
+                name=self._path.stem, ext=self._path.suffix))
         elif self._can_strip():
-            self._status.setText(
-                "This format keeps a read-only metadata view here. Remove All strips "
-                "metadata into a separate copy.")
+            self._status.setText(i18n.tr("dlg.metadata.status_ro_strip"))
         else:
-            self._status.setText("This format keeps a read-only metadata view here.")
+            self._status.setText(i18n.tr("dlg.metadata.status_ro"))
 
     def _fields(self) -> dict[int, str]:
         fields: dict[int, str] = {}
@@ -849,15 +882,15 @@ class MetadataDialog(ToolDialog):
 
     def _save_copy(self) -> None:
         if not self._is_image():
-            message = "Saving edited metadata is available for images."
+            message = i18n.tr("dlg.metadata.save_image_only")
             if self._can_strip():
-                message += " Use Remove All to strip metadata from this file."
-            QMessageBox.information(self, "Metadata", message)
+                message += i18n.tr("dlg.metadata.save_image_only_strip")
+            QMessageBox.information(self, i18n.tr("dlg.metadata.title"), message)
             return
         fields = self._fields()
         path = self._path
         progress.run_job(
-            f"Writing metadata for {path.name}",
+            i18n.tr("action.writing_metadata", name=path.name),
             lambda ctx: [tools.write_metadata_image(path, fields, False, ctx, set())],
         )
         self.accept()
@@ -865,7 +898,7 @@ class MetadataDialog(ToolDialog):
     def _remove_all(self) -> None:
         path = self._path
         progress.run_job(
-            f"Removing metadata from {path.name}",
+            i18n.tr("action.removing_metadata", name=path.name),
             lambda ctx: [tools.strip_metadata(path, ctx, set())],
         )
         self.accept()

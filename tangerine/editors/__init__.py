@@ -9,7 +9,7 @@ from pathlib import Path
 
 from PySide6.QtWidgets import QMessageBox, QWidget
 
-from .. import jobs, progress, settings, tools
+from .. import i18n, jobs, progress, settings, tools
 from ..engines import EngineError
 from .audio import (
     BleepDialog,
@@ -83,13 +83,13 @@ def open_editor(paths, key: str, parent: QWidget | None = None, label: str | Non
     builder = builders.get(key)
     if builder is None:
         QMessageBox.information(
-            parent, label or "Tangerine",
-            f"The {label or key} editor is not available yet.")
+            parent, label or i18n.tr("app.name"),
+            i18n.tr("dlg.not_available", label=label or key))
         return
     try:
         dialog = builder()
     except EngineError as error:
-        QMessageBox.warning(parent, label or "Tangerine", str(error))
+        QMessageBox.warning(parent, label or i18n.tr("app.name"), str(error))
         return
     dialog.exec()
 

@@ -11,7 +11,7 @@ from PySide6.QtCore import QLockFile, QObject, QTimer
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication, QMenu, QMessageBox, QSystemTrayIcon
 
-from . import actions, catalog, paths, settings, theme
+from . import actions, catalog, i18n, paths, settings, theme
 from .monitor import DragMonitor
 from .wheel import FanItem, TangerineWheel, icon_for
 
@@ -89,21 +89,44 @@ class Controller(QObject):
         self.monitor.wheelRefreshed.connect(self._refresh_wheel)
 
         self.tray = QSystemTrayIcon(QIcon(str(paths.icon_path())), self)
-        self.tray.setToolTip("Tangerine")
-        menu = QMenu()
-        self._active_menu = menu.addMenu("Active")
-        self._active_menu.aboutToShow.connect(self._rebuild_active)
-        menu.addSeparator()
-        settings_action = menu.addAction("Settings...")
-        settings_action.triggered.connect(self.open_settings)
-        update_action = menu.addAction("Check for Updates...")
-        update_action.triggered.connect(self._check_updates)
-        menu.addSeparator()
-        quit_action = menu.addAction("Quit Tangerine")
-        quit_action.triggered.connect(self._quit)
-        self.tray.setContextMenu(menu)
+        self.tray.setToolTip(i18n.tr("tray.tooltip"))
+        self._menu = None
+        self._active_menu = None
+        self._build_tray_menu()
         self.tray.activated.connect(self._tray_activated)
         self.tray.show()
+
+        i18n.add_listener(self._language_changed)
+
+    # -- localization ----------------------------------------------------------
+    def _build_tray_menu(self):
+        menu = QMenu()
+        self._active_menu = menu.addMenu(i18n.tr("tray.active"))
+        self._active_menu.aboutToShow.connect(self._rebuild_active)
+        menu.addSeparator()
+        settings_action = menu.addAction(i18n.tr("tray.settings"))
+        settings_action.triggered.connect(self.open_settings)
+        update_action = menu.addAction(i18n.tr("tray.check_updates"))
+        update_action.triggered.connect(self._check_updates)
+        menu.addSeparator()
+        quit_action = menu.addAction(i18n.tr("tray.quit"))
+        quit_action.triggered.connect(self._quit)
+        self._menu = menu
+        self.tray.setContextMenu(menu)
+
+    def _language_changed(self, code=None):
+        try:
+            self.tray.setToolTip(i18n.tr("tray.tooltip"))
+            self._build_tray_menu()
+            files = self.wheel.file_paths()
+            if files:
+                self._refresh_wheel(self._mode)
+            else:
+                main = i18n.tr("wheel.tools" if self._mode == "tools" else "wheel.convert")
+                self.wheel.set_prompt(main, i18n.tr("wheel.drop_file"))
+            self.wheel.update()
+        except Exception:
+            log.exception("Could not refresh the UI after a language change")
 
     # -- wheel -----------------------------------------------------------------
     def _items_for(self, files, mode):
@@ -114,13 +137,16 @@ class Controller(QObject):
         if mode == "tools":
             items = []
             for tool in catalog.tools_for(sources):
-                items.append(FanItem(tool.id, tool.label, icon_for(tool.id), "tool"))
-                self._labels[tool.id] = tool.label
+                label = i18n.tr("tool." + tool.id)
+                items.append(FanItem(tool.id, label, icon_for(tool.id), "tool"))
+                self._labels[tool.id] = label
             return items
         items = []
         for conversion in catalog.conversions_for(sources):
-            items.append(FanItem(conversion.target_ext, conversion.label, icon_for(conversion.target_ext), "conversion"))
-            self._labels[conversion.target_ext] = conversion.label
+            label = i18n.tr("conv." + conversion.target_ext)
+            items.append(FanItem(conversion.target_ext, label,
+                                 icon_for(conversion.target_ext), "conversion"))
+            self._labels[conversion.target_ext] = label
         return items
 
     def _factory(self, files):
@@ -130,11 +156,8 @@ class Controller(QObject):
         self._mode = mode
         self.wheel.set_mode(mode)
         self.wheel.set_items(self._items_for(files, mode))
-        if mode == "tools":
-            main, sub = "Tools", self._subtitle(files)
-        else:
-            main, sub = "Convert", self._subtitle(files)
-        self.wheel.set_prompt(main, sub)
+        main = i18n.tr("wheel.tools" if mode == "tools" else "wheel.convert")
+        self.wheel.set_prompt(main, self._subtitle(files))
         self.wheel.center_at(pos)
         self.wheel.show()
 
@@ -145,19 +168,16 @@ class Controller(QObject):
         if not files:
             return
         self.wheel.set_items(self._items_for(files, mode))
-        if mode == "tools":
-            main, sub = "Tools", self._subtitle(files)
-        else:
-            main, sub = "Convert", self._subtitle(files)
-        self.wheel.set_prompt(main, sub)
+        main = i18n.tr("wheel.tools" if mode == "tools" else "wheel.convert")
+        self.wheel.set_prompt(main, self._subtitle(files))
 
     @staticmethod
     def _subtitle(files):
         if not files:
-            return "Drop a file here"
+            return i18n.tr("wheel.drop_file")
         if len(files) == 1:
             return Path(files[0]).name
-        return f"{len(files)} files"
+        return i18n.tr("wheel.files_count", n=len(files))
 
     def _move_wheel(self, pos):
         self.wheel.update_cursor(pos)
@@ -191,10 +211,11 @@ class Controller(QObject):
     def _rebuild_active(self):
         self._active_menu.clear()
         if not self._jobs:
-            self._active_menu.addAction("Nothing active").setEnabled(False)
+            self._active_menu.addAction(i18n.tr("tray.nothing_active")).setEnabled(False)
             return
         for window in list(self._jobs):
-            action = self._active_menu.addAction(window.windowTitle() or "Working")
+            action = self._active_menu.addAction(
+                window.windowTitle() or i18n.tr("tray.working"))
             action.triggered.connect(lambda _=False, w=window: self._raise(w))
 
     @staticmethod
@@ -218,8 +239,8 @@ class Controller(QObject):
             self._settings_window = settings_window.open_settings()
         except ImportError:
             self.tray.showMessage(
-                "Tangerine",
-                "The settings window is not available in this build.",
+                i18n.tr("app.name"),
+                i18n.tr("tray.settings_unavailable"),
                 QSystemTrayIcon.MessageIcon.Warning,
                 4000,
             )
@@ -229,17 +250,16 @@ class Controller(QObject):
     def _check_updates(self):
         QMessageBox.information(
             None,
-            "Tangerine",
-            f"Tangerine {paths.APP_VERSION} for Windows\n\n"
-            "This is a local build, so update checks are handled manually.",
+            i18n.tr("app.name"),
+            i18n.tr("tray.update_message", version=paths.APP_VERSION),
         )
 
     def _quit(self):
         if self._jobs:
             choice = QMessageBox.question(
                 None,
-                "Tangerine",
-                "Conversions are still running. Quit anyway?",
+                i18n.tr("app.name"),
+                i18n.tr("tray.quit_running"),
             )
             if choice != QMessageBox.StandardButton.Yes:
                 return
@@ -252,9 +272,8 @@ class Controller(QObject):
 
     def notify_welcome(self):
         self.tray.showMessage(
-            "Tangerine",
-            "Drag files from an Explorer window while holding Shift to convert them.\n"
-            "Hold Alt+Shift instead for file tools like Compress, Crop, or Trim.",
+            i18n.tr("app.name"),
+            i18n.tr("tray.welcome"),
             QSystemTrayIcon.MessageIcon.Information,
             9000,
         )
@@ -265,7 +284,8 @@ class Controller(QObject):
 def _already_running(app):
     tray = QSystemTrayIcon(QIcon(str(paths.icon_path())))
     tray.show()
-    tray.showMessage("Tangerine", "Tangerine is already running.", 5000)
+    tray.showMessage(
+        i18n.tr("app.name"), i18n.tr("tray.already_running"), 5000)
     QTimer.singleShot(5200, app.quit)
     app.exec()
     return 1
