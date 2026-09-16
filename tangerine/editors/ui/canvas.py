@@ -4,7 +4,7 @@ from __future__ import annotations
 import math
 from pathlib import Path
 
-from PIL import ImageOps
+from PIL import Image, ImageOps
 
 from PySide6.QtCore import QPointF, QRectF, QSize, Qt
 from PySide6.QtGui import (
@@ -18,8 +18,10 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import QInputDialog, QWidget
 
-from ... import tools
+from ... import i18n, tools
 from ..base import pil_to_qimage
+
+DISPLAY_MAX = 1600
 
 
 class ImageCanvas(QWidget):
@@ -29,13 +31,35 @@ class ImageCanvas(QWidget):
                  max_size: tuple[int, int] = (620, 460)):
         super().__init__(parent)
         self._max_size = max_size
-        self.image = ImageOps.exif_transpose(tools.load_image(Path(path))).convert("RGBA")
-        qimage = pil_to_qimage(self.image)
-        self.pixmap = QPixmap.fromImage(qimage)
+        self.image = None
+        self.image_size = (0, 0)
+        self.display_scale = 1.0
+        self.pixmap = QPixmap()
         self.scale = 1.0
         self.offset = QPointF(0.0, 0.0)
         self.setMinimumSize(360, 240)
         self.setMouseTracking(True)
+        self.load(path)
+
+    def load(self, path: Path) -> None:
+        full = tools.load_image(Path(path))
+        if full.getexif().get(274, 1) != 1:
+            full = ImageOps.exif_transpose(full)
+        width, height = full.size
+        self.image_size = (width, height)
+        longest = max(width, height)
+        if longest > DISPLAY_MAX:
+            self.display_scale = longest / DISPLAY_MAX
+            display_size = (max(1, round(width / self.display_scale)),
+                            max(1, round(height / self.display_scale)))
+            if full.mode in ("P", "PA"):
+                full = full.convert("RGBA")
+            display = full.resize(display_size, Image.LANCZOS)
+        else:
+            self.display_scale = 1.0
+            display = full
+        self.image = display.convert("RGBA")
+        self.pixmap = QPixmap.fromImage(pil_to_qimage(self.image))
 
     def sizeHint(self) -> QSize:  # noqa: N802
         return QSize(*self._max_size)
@@ -52,18 +76,22 @@ class ImageCanvas(QWidget):
 
     def to_image(self, pos: QPointF) -> tuple[float, float]:
         return (
-            (pos.x() - self.offset.x()) / self.scale,
-            (pos.y() - self.offset.y()) / self.scale,
+            (pos.x() - self.offset.x()) / self.scale * self.display_scale,
+            (pos.y() - self.offset.y()) / self.scale * self.display_scale,
         )
 
     def to_widget(self, x: float, y: float) -> QPointF:
-        return QPointF(self.offset.x() + x * self.scale, self.offset.y() + y * self.scale)
+        return QPointF(
+            self.offset.x() + x / self.display_scale * self.scale,
+            self.offset.y() + y / self.display_scale * self.scale,
+        )
 
     def clamp_box(self, x: float, y: float, w: float, h: float) -> tuple[float, float, float, float]:
-        x = max(0.0, min(x, self.image.width - 1.0))
-        y = max(0.0, min(y, self.image.height - 1.0))
-        w = max(1.0, min(w, self.image.width - x))
-        h = max(1.0, min(h, self.image.height - y))
+        img_w, img_h = self.image_size
+        x = max(0.0, min(x, img_w - 1.0))
+        y = max(0.0, min(y, img_h - 1.0))
+        w = max(1.0, min(w, img_w - x))
+        h = max(1.0, min(h, img_h - y))
         return x, y, w, h
 
     def paintEvent(self, event) -> None:  # noqa: N802
@@ -80,7 +108,7 @@ class ImageCanvas(QWidget):
 class CropCanvas(ImageCanvas):
     def __init__(self, path: Path, parent=None):
         super().__init__(path, parent)
-        self.rect = [0.0, 0.0, float(self.image.width), float(self.image.height)]
+        self.rect = [0.0, 0.0, float(self.image_size[0]), float(self.image_size[1])]
         self._mode = None
         self._start = QPointF(0.0, 0.0)
         self._start_rect = list(self.rect)
@@ -116,12 +144,12 @@ class CropCanvas(ImageCanvas):
         if self._mode is None:
             return
         pos = event.position()
-        dx = (pos.x() - self._start.x()) / self.scale
-        dy = (pos.y() - self._start.y()) / self.scale
+        dx = (pos.x() - self._start.x()) / self.scale * self.display_scale
+        dy = (pos.y() - self._start.y()) / self.scale * self.display_scale
         rx, ry, rw, rh = self._start_rect
         if self._mode == "move":
-            nx = max(0.0, min(rx + dx, self.image.width - rw))
-            ny = max(0.0, min(ry + dy, self.image.height - rh))
+            nx = max(0.0, min(rx + dx, self.image_size[0] - rw))
+            ny = max(0.0, min(ry + dy, self.image_size[1] - rh))
             self.rect = [nx, ny, rw, rh]
         else:
             x2, y2 = rx + rw, ry + rh
@@ -137,8 +165,8 @@ class CropCanvas(ImageCanvas):
             y1, y2 = sorted((ry, y2))
             x1 = max(0.0, x1)
             y1 = max(0.0, y1)
-            x2 = min(float(self.image.width), x2)
-            y2 = min(float(self.image.height), y2)
+            x2 = min(float(self.image_size[0]), x2)
+            y2 = min(float(self.image_size[1]), y2)
             if x2 - x1 >= 8 and y2 - y1 >= 8:
                 self.rect = [x1, y1, x2 - x1, y2 - y1]
         if self.changed:
@@ -268,11 +296,13 @@ class AnnotateCanvas(ImageCanvas):
         if event.button() != Qt.MouseButton.LeftButton:
             return
         x, y = self.to_image(event.position())
-        x = max(0.0, min(x, self.image.width - 1.0))
-        y = max(0.0, min(y, self.image.height - 1.0))
+        x = max(0.0, min(x, self.image_size[0] - 1.0))
+        y = max(0.0, min(y, self.image_size[1] - 1.0))
         self._start = (x, y)
         if self.tool == "text":
-            text, ok = QInputDialog.getText(self, "Text", "Enter text:")
+            text, ok = QInputDialog.getText(
+                self, i18n.tr("dlg.annotate.text_title"),
+                i18n.tr("dlg.annotate.text_prompt"))
             if ok and text.strip():
                 self.ops.append({"type": "text", "x": x, "y": y, "text": text.strip(),
                                  "color": self.color, "size": self.font_size})
@@ -295,8 +325,8 @@ class AnnotateCanvas(ImageCanvas):
         if self._draft is None:
             return
         x, y = self.to_image(event.position())
-        x = max(0.0, min(x, self.image.width - 1.0))
-        y = max(0.0, min(y, self.image.height - 1.0))
+        x = max(0.0, min(x, self.image_size[0] - 1.0))
+        y = max(0.0, min(y, self.image_size[1] - 1.0))
         if self._draft["type"] == "pen":
             self._draft["points"].append((x, y))
         else:
@@ -330,10 +360,11 @@ class AnnotateCanvas(ImageCanvas):
     def paint_overlay(self) -> None:
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        scale = self.scale / self.display_scale
         for op in self.ops:
-            _draw_op(painter, op, self.scale, self.offset)
+            _draw_op(painter, op, scale, self.offset)
         if self._draft is not None:
-            _draw_op(painter, self._draft, self.scale, self.offset)
+            _draw_op(painter, self._draft, scale, self.offset)
         painter.end()
 
 

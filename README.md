@@ -149,6 +149,21 @@ create a shortcut to `pythonw main.py` (for example
 and place the shortcut in that folder. It then appears under **Task Manager →
 Startup apps** and can be disabled from there at any time.
 
+## Languages
+
+The interface ships in **English** and **Spanish**. Pick the language under
+**Settings → General → Language**; the choice is stored in `settings.json`.
+**System** follows the Windows display language (`es_MX` → Spanish, any
+unsupported locale falls back to English).
+
+- Changing the language applies immediately to the tray menu, its tooltip and
+  the conversion/tools wheel.
+- Windows that are already open (editors, progress windows) apply the new
+  language the next time they are opened.
+- Coverage: the wheels, tray, settings window, every editor dialog, the
+  progress windows and the common conversion/tool error messages. A few
+  rarely seen fallback messages may still be in English.
+
 ## Tests
 
 The suite uses pytest and needs no external fixtures — it synthesizes its own
@@ -176,7 +191,10 @@ a corrupt-file recovery.
   version and points at manual updates.
 - **Audio Visualizer needs an audio track.** Video-only sources are not
   supported for visualization.
-- **No OCR.** PDFs without a text layer cannot be exported to `.txt`.
+- **OCR is optional.** PDFs without a text layer fall back to the open-source
+  OCR engine when `rapidocr-onnxruntime` is installed
+  (`pip install -r requirements-ocr.txt`); without it, such PDFs cannot be
+  exported to `.txt` and the app points at the install command.
 - **Document conversions are text-level.** docx→pdf and pptx→pdf keep basic
   styling only: tables are rendered as text rows, and images, shapes, charts
   and complex layout are not reproduced.
@@ -185,7 +203,8 @@ a corrupt-file recovery.
   formats (docx, xlsx, pptx, csv, rtf, md, odt, epub).
 - **Excel reads only the active sheet**, using the values cached in the file.
 - **Document images render through an intermediate PDF** at 300 dpi.
-- **UI in English only** — no localization yet.
+- **Localization is UI-level.** English and Spanish are supported; a few
+  rarely seen fallback/error strings remain English-only.
 - **Large images.** Editing images above roughly 50 megapixels in the
   interactive editors can use a lot of memory.
 - **FFmpeg-dependent behavior.** Audio/video codec availability and edge-case
@@ -244,7 +263,8 @@ rtf, md, odt, epub) a txt/csv/xlsx/html/pdf/jpg/png según el formato, y
 comprime docx/xlsx/pptx con **doc.compress**. Licencia MIT para este código; el
 nombre y la idea pertenecen a los autores originales. Limitaciones honestas:
 solo Windows 11, sin instalador ni firma digital, sin actualización automática,
-sin OCR para PDF escaneados, conversiones de documentos a nivel de texto (sin
-fidelidad de maquetación compleja y sin formatos binarios antiguos
-`.doc`/`.xls`/`.ppt`), interfaz solo en inglés, y el visualizador de audio
-necesita una pista de audio.
+OCR opcional para PDF escaneados (`pip install -r requirements-ocr.txt`),
+conversiones de documentos a nivel de texto (sin fidelidad de maquetación
+compleja y sin formatos binarios antiguos `.doc`/`.xls`/`.ppt`), interfaz en
+inglés o español (Ajustes → General; opción Sistema), y el visualizador de
+audio necesita una pista de audio.

@@ -11,6 +11,7 @@ from . import paths
 log = logging.getLogger("tangerine")
 
 DEFAULTS: dict[str, Any] = {
+    "language": "en",
     "conversionWheelDragModifierMask": "shift",
     "toolsWheelDragModifierMask": "alt+shift",
     "soundsAndHapticsEnabled": True,
@@ -148,7 +149,9 @@ def format_mask(mask: set[str]) -> str:
 
 
 def mask_label(text: str) -> str:
+    from . import i18n
+
     mask = parse_mask(text)
     if not mask:
-        return "None"
+        return i18n.tr("settings.mask.none")
     return " + ".join(MODIFIER_LABELS[m] for m in MODIFIER_ORDER if m in mask)

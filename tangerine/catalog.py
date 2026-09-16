@@ -190,6 +190,11 @@ def available_engines() -> set[str]:
         engines.add("qr")
     except Exception:
         pass
+    try:
+        import rapidocr_onnxruntime  # noqa: F401
+        engines.add("ocr")
+    except Exception:
+        pass
     if media.ffmpeg_path():
         engines.add("ffmpeg")
     if media.unrar_path():

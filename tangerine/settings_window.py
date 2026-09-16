@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
 
 from . import settings
 from .media import ffmpeg_path, ffprobe_path, rar_path, unrar_path
-from . import paths
+from . import i18n, paths
 
 _WINDOW = None
 
@@ -101,19 +101,26 @@ def _make_row(label, key, choices, keywords=""):
     return row
 
 
-_STRENGTH = [("balanced", "Balanced"), ("strong", "Strong")]
-_SIZES = [
-    ("original", "Original dimensions"),
-    ("2560", "Longest edge 2560 px"),
-    ("1920", "Longest edge 1920 px"),
-    ("1280", "Longest edge 1280 px"),
-]
+def _strength_choices():
+    return [
+        ("balanced", i18n.tr("settings.strength.balanced")),
+        ("strong", i18n.tr("settings.strength.strong")),
+    ]
+
+
+def _size_choices():
+    return [
+        ("original", i18n.tr("settings.size.original")),
+        ("2560", i18n.tr("settings.size.2560")),
+        ("1920", i18n.tr("settings.size.1920")),
+        ("1280", i18n.tr("settings.size.1280")),
+    ]
 
 
 class SettingsWindow(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Tangerine Settings")
+        self.setWindowTitle(i18n.tr("settings.title"))
         self.resize(560, 620)
         self.setMinimumSize(500, 480)
 
@@ -122,42 +129,61 @@ class SettingsWindow(QWidget):
         tabs = QTabWidget()
         root.addWidget(tabs, 1)
 
-        tabs.addTab(self._wheels_tab(), "Wheels")
-        tabs.addTab(self._formats_tab(), "Formats")
-        tabs.addTab(self._about_tab(), "About")
-        tabs.addTab(self._empty_tab("Fan preview and onboarding live in the wheel itself."), "General")
+        tabs.addTab(self._wheels_tab(), i18n.tr("settings.tab.wheels"))
+        tabs.addTab(self._formats_tab(), i18n.tr("settings.tab.formats"))
+        tabs.addTab(self._about_tab(), i18n.tr("settings.tab.about"))
+        tabs.addTab(self._general_tab(), i18n.tr("settings.tab.general"))
 
     # ------------------------------------------------------------------
 
-    def _empty_tab(self, text):
+    def _general_tab(self):
         page = QWidget()
         layout = QVBoxLayout(page)
-        note = QLabel(text)
-        note.setWordWrap(True)
-        note.setObjectName("dim")
-        layout.addWidget(note)
+        layout.setSpacing(10)
+
+        form = QFormLayout()
+        self.language_combo = QComboBox()
+        self.language_combo.addItem(i18n.tr("settings.language.system"), "system")
+        for code, label in i18n.LANGUAGES:
+            self.language_combo.addItem(label, code)
+        current = str(settings.get("language", i18n.DEFAULT_LANGUAGE) or i18n.DEFAULT_LANGUAGE)
+        index = self.language_combo.findData(current)
+        if index >= 0:
+            self.language_combo.setCurrentIndex(index)
+        self.language_combo.currentIndexChanged.connect(self._language_changed)
+        form.addRow(i18n.tr("settings.language.label"), self.language_combo)
+        layout.addLayout(form)
+
+        hint = QLabel(i18n.tr("settings.language.hint"))
+        hint.setWordWrap(True)
+        hint.setObjectName("dim")
+        layout.addWidget(hint)
         layout.addStretch(1)
         return page
+
+    def _language_changed(self):
+        code = self.language_combo.currentData()
+        if code:
+            i18n.set_language(str(code))
 
     def _wheels_tab(self):
         page = QWidget()
         layout = QVBoxLayout(page)
         layout.setSpacing(12)
 
-        intro = QLabel(
-            "Hold one of these combinations while dragging files in File Explorer "
-            "to open a wheel at the pointer."
-        )
+        intro = QLabel(i18n.tr("settings.wheels.intro"))
         intro.setWordWrap(True)
         intro.setObjectName("dim")
         layout.addWidget(intro)
 
-        self._conversion_checks = ModifierChecks("Conversions wheel", "conversionWheelDragModifierMask")
-        self._tools_checks = ModifierChecks("Tools wheel", "toolsWheelDragModifierMask")
+        self._conversion_checks = ModifierChecks(
+            i18n.tr("settings.wheels.conversions"), "conversionWheelDragModifierMask")
+        self._tools_checks = ModifierChecks(
+            i18n.tr("settings.wheels.tools"), "toolsWheelDragModifierMask")
         layout.addWidget(self._conversion_checks)
         layout.addWidget(self._tools_checks)
 
-        sounds = QCheckBox("Sound and haptic feedback")
+        sounds = QCheckBox(i18n.tr("settings.wheels.sound"))
         sounds.setChecked(bool(settings.get("soundsAndHapticsEnabled", True)))
 
         def _toggle_sound(state):
@@ -167,10 +193,16 @@ class SettingsWindow(QWidget):
         sounds.toggled.connect(_toggle_sound)
         layout.addWidget(sounds)
 
-        theme_row = _make_row("Fan theme", "conversionFanTheme", [("glass", "Glass"), ("solid", "Solid")])
+        theme_row = _make_row(
+            i18n.tr("settings.wheels.fan_theme"), "conversionFanTheme",
+            [
+                ("glass", i18n.tr("settings.wheels.theme.glass")),
+                ("solid", i18n.tr("settings.wheels.theme.solid")),
+            ],
+        )
         layout.addWidget(theme_row)
 
-        hint = QLabel("The defaults are Shift for conversions and Alt+Shift for tools.")
+        hint = QLabel(i18n.tr("settings.wheels.hint"))
         hint.setObjectName("dim")
         layout.addWidget(hint)
         layout.addStretch(1)
@@ -182,26 +214,36 @@ class SettingsWindow(QWidget):
         layout.setSpacing(10)
 
         search = QLineEdit()
-        search.setPlaceholderText("Search conversion defaults…")
+        search.setPlaceholderText(i18n.tr("settings.formats.search"))
         layout.addWidget(search)
 
         self._rows: list[_Row] = []
 
-        image_group = QGroupBox("Images")
+        image_group = QGroupBox(i18n.tr("settings.formats.images"))
         image_layout = QVBoxLayout(image_group)
-        self._add_row(image_layout, "Compression preset", "defaultImageCompressionStrength", _STRENGTH, "compress jpg png quality")
-        self._add_row(image_layout, "Compression size", "defaultImageCompressionSize", _SIZES, "resize dimensions pixels")
+        self._add_row(image_layout, i18n.tr("settings.formats.preset"),
+                      "defaultImageCompressionStrength", _strength_choices(),
+                      "compress jpg png quality")
+        self._add_row(image_layout, i18n.tr("settings.formats.size"),
+                      "defaultImageCompressionSize", _size_choices(),
+                      "resize dimensions pixels")
         layout.addWidget(image_group)
 
-        video_group = QGroupBox("Videos")
+        video_group = QGroupBox(i18n.tr("settings.formats.videos"))
         video_layout = QVBoxLayout(video_group)
-        self._add_row(video_layout, "Compression preset", "defaultVideoCompressionStrength", _STRENGTH, "compress mp4 hevc bitrate")
-        self._add_row(video_layout, "Compression size", "defaultVideoCompressionSize", _SIZES, "resize dimensions pixels")
+        self._add_row(video_layout, i18n.tr("settings.formats.preset"),
+                      "defaultVideoCompressionStrength", _strength_choices(),
+                      "compress mp4 hevc bitrate")
+        self._add_row(video_layout, i18n.tr("settings.formats.size"),
+                      "defaultVideoCompressionSize", _size_choices(),
+                      "resize dimensions pixels")
         layout.addWidget(video_group)
 
-        audio_group = QGroupBox("Audio")
+        audio_group = QGroupBox(i18n.tr("settings.formats.audio"))
         audio_layout = QVBoxLayout(audio_group)
-        self._add_row(audio_layout, "Compression preset", "defaultAudioCompressionStrength", _STRENGTH, "compress mp3 m4a bitrate")
+        self._add_row(audio_layout, i18n.tr("settings.formats.preset"),
+                      "defaultAudioCompressionStrength", _strength_choices(),
+                      "compress mp3 m4a bitrate")
         layout.addWidget(audio_group)
 
         def _filter(text):
@@ -223,28 +265,29 @@ class SettingsWindow(QWidget):
         layout = QVBoxLayout(page)
         layout.setSpacing(8)
 
-        title = QLabel(f"Tangerine {paths.APP_VERSION} for Windows (build {paths.APP_BUILD})")
+        title = QLabel(i18n.tr(
+            "settings.about.title",
+            version=paths.APP_VERSION, build=paths.APP_BUILD,
+        ))
         font = title.font()
         font.setPointSize(font.pointSize() + 2)
         font.setBold(True)
         title.setFont(font)
         layout.addWidget(title)
 
-        blurb = QLabel(
-            "A drag-to-convert companion for File Explorer, rebuilt from the macOS "
-            "Tangerine interaction: hold a modifier while dragging, drop on a petal."
-        )
+        blurb = QLabel(i18n.tr("settings.about.blurb"))
         blurb.setWordWrap(True)
         blurb.setObjectName("dim")
         layout.addWidget(blurb)
 
+        not_found = i18n.tr("settings.about.not_found")
         for name, value in (
-            ("FFmpeg", ffmpeg_path() or "not found"),
-            ("FFprobe", ffprobe_path() or "not found"),
-            ("RAR writer", rar_path() or "not found"),
-            ("RAR reader", unrar_path() or "not found"),
-            ("Settings", str(paths.settings_file())),
-            ("Log", str(paths.log_file())),
+            (i18n.tr("settings.about.ffmpeg"), ffmpeg_path() or not_found),
+            (i18n.tr("settings.about.ffprobe"), ffprobe_path() or not_found),
+            (i18n.tr("settings.about.rar_writer"), rar_path() or not_found),
+            (i18n.tr("settings.about.rar_reader"), unrar_path() or not_found),
+            (i18n.tr("settings.about.settings_file"), str(paths.settings_file())),
+            (i18n.tr("settings.about.log"), str(paths.log_file())),
         ):
             row = QLabel(f"{name}: {value}")
             row.setWordWrap(True)
@@ -252,10 +295,10 @@ class SettingsWindow(QWidget):
             layout.addWidget(row)
 
         buttons = QHBoxLayout()
-        folder = QPushButton("Open Settings Folder")
+        folder = QPushButton(i18n.tr("settings.about.open_folder"))
         folder.setProperty("flat", "true")
         folder.clicked.connect(self._open_folder)
-        reset = QPushButton("Restore Defaults")
+        reset = QPushButton(i18n.tr("settings.about.restore"))
         reset.setProperty("flat", "true")
         reset.clicked.connect(self._reset)
         buttons.addWidget(folder)
@@ -274,8 +317,8 @@ class SettingsWindow(QWidget):
     def _reset(self):
         confirm = QMessageBox.question(
             self,
-            "Restore Defaults",
-            "Restore every Tangerine setting to its default value?",
+            i18n.tr("settings.restore.title"),
+            i18n.tr("settings.restore.confirm"),
         )
         if confirm != QMessageBox.Yes:
             return
@@ -284,7 +327,21 @@ class SettingsWindow(QWidget):
         for checks in (getattr(self, "_conversion_checks", None), getattr(self, "_tools_checks", None)):
             if checks is not None:
                 checks._load()
-        QMessageBox.information(self, "Tangerine", "Settings restored to defaults.")
+        self._sync_language_combo()
+        QMessageBox.information(
+            self, i18n.tr("app.name"), i18n.tr("settings.restore.done"))
+
+    def _sync_language_combo(self):
+        combo = getattr(self, "language_combo", None)
+        if combo is None:
+            return
+        current = str(settings.get("language", i18n.DEFAULT_LANGUAGE) or i18n.DEFAULT_LANGUAGE)
+        index = combo.findData(current)
+        if index >= 0 and index != combo.currentIndex():
+            combo.blockSignals(True)
+            combo.setCurrentIndex(index)
+            combo.blockSignals(False)
+        i18n.set_language(current)
 
 
 def open_settings(parent=None):

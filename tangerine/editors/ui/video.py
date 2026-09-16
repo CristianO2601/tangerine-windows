@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ... import i18n
 from ..base import ToolDialog
 from .canvas import RedactCanvas
 from .waveform import PlayerMixin
@@ -42,9 +43,9 @@ class VideoPane(QWidget, PlayerMixin):
         self._player.positionChanged.connect(self._on_position)
 
         controls = QHBoxLayout()
-        play = QPushButton("Play")
+        play = QPushButton(i18n.tr("btn.play"))
         play.clicked.connect(self.play)
-        stop = QPushButton("Stop")
+        stop = QPushButton(i18n.tr("btn.stop"))
         stop.clicked.connect(self._player.stop)
         self.time_label = QLabel("0:00.0 / 0:00.0")
         self.time_label.setProperty("dim", True)
@@ -86,19 +87,21 @@ class VideoPane(QWidget, PlayerMixin):
 
 class BoxDrawDialog(ToolDialog):
     def __init__(self, frame: Path, parent: QWidget | None = None):
-        super().__init__("Draw Redaction Box", parent)
+        super().__init__(i18n.tr("dlg.boxdraw.title"), parent)
         self.canvas = RedactCanvas(frame)
         self.canvas.setFixedSize(560, 380)
         self.box = None
         self._body.addWidget(self.canvas)
-        hint = QLabel("Drag to draw the box that should be hidden in this video.")
+        hint = QLabel(i18n.tr("dlg.boxdraw.hint"))
         hint.setProperty("dim", True)
         self._body.addWidget(hint)
-        self.add_buttons("Use Box")
+        self.add_buttons(i18n.tr("btn.use_box"))
 
     def _accept_clicked(self) -> None:
         if not self.canvas.boxes:
-            QMessageBox.warning(self, "Redact Video", "Draw a box first.")
+            QMessageBox.warning(
+            self, i18n.tr("dlg.redact_video.title"),
+            i18n.tr("dlg.boxdraw.need_box"))
             return
         box = self.canvas.boxes[-1]
         self.box = (int(box["x"]), int(box["y"]), int(box["w"]), int(box["h"]))

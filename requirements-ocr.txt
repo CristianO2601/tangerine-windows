@@ -1,0 +1,2 @@
+# Optional OCR engine for scanned PDFs (open-source, CPU-only, no admin rights).
+rapidocr-onnxruntime>=1.2

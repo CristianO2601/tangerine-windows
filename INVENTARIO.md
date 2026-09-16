@@ -1,6 +1,6 @@
 # Inventario de funciones — Tangerine para Windows
 
-Estado verificado: auditoría de rutas **43/43 OK**, pruebas de motores **50/50**, regresión de arrastre **11/11**.
+Estado verificado: auditoría de rutas **43/43 OK**, suite completa **85/85**, smoke de editores **23/23**, regresión de arrastre **11/11**.
 
 ## Cómo funciona
 
@@ -22,6 +22,8 @@ Estado verificado: auditoría de rutas **43/43 OK**, pruebas de motores **50/50*
 | Archivos (zip, tar, gz, rar) | zip, tar, gz, rar |
 
 \* docx solo desde jpg/png. Varios archivos se convierten en lote; varios PDF se unen y varias imágenes se convierten a PDF o collage.
+
+**OCR opcional:** los PDF escaneados (sin capa de texto) se leen con `rapidocr-onnxruntime` (`pip install -r requirements-ocr.txt`) para las salidas txt/docx; sin el motor, el error indica el comando de instalación y docx→imagen sigue disponible.
 
 ## Documentos (Shift)
 
@@ -58,18 +60,22 @@ La herramienta **doc.compress** (Alt+Shift) recomprime el contenedor ZIP de docx
 
 **Archivos**: Extraer (zip, tar, gz, rar)
 
+## Idioma (i18n)
+
+Interfaz en **inglés** y **español** (431 claves por idioma) elegible en **Ajustes → General → Idioma**; la opción **Sistema** sigue el idioma de Windows (`es_MX` → español) y recurre al inglés si no está soportado. El cambio se aplica al instante en la bandeja (menú y tooltip) y en la rueda; las ventanas ya abiertas lo aplican al reabrirse. Cobertura: rueda de conversiones y herramientas, bandeja, ajustes, los 20 diálogos de editor, ventanas de progreso y los errores comunes de motores/herramientas (los nombres de archivo, códigos y rutas no se traducen).
+
 ## Verificación
 
 - Auditoría de rutas: las 43 herramientas abren su editor o ejecutan su proceso, sin mensajes de "no disponible".
-- Motores de conversión y herramientas: 50/50 pruebas de extremo a extremo.
+- Suite completa: **85/85** pruebas (incluye paridad i18n en/es, OCR, memoria de lienzos y visualizador).
 - Regresión del arrastre: 11/11 — soltar fuerza siempre una **copia** y rechaza orígenes que solo permiten mover.
 - Comprimir PDF verificado: notas.pdf 1 580 → 1 154 B; PDF de 30 páginas 27 956 → 27 408 B.
 - Revisión de calidad y estabilidad (1.4.1): corregidos todos los hallazgos bloqueantes e importantes — seguridad al crear RAR, fotos rotadas (EXIF) en recorte/censura, censura de vídeo verificada, fusión de PDFs sin sobrescritura, cancelación real con limpieza, guardado atómico de ajustes, instancia única, y mejoras de memoria y rendimiento. Detalles en `CHANGELOG.md`.
 
-## Novedades de esta versión (1.4.1)
+## Novedades de esta versión (1.6.0)
 
-- Nuevo icono redibujado (rueda de cítrico) nítido a todos los tamaños, y disco naranja de alto contraste para la bandeja.
-- PDF → Comprimir ya funciona (antes mostraba "el editor no está disponible").
-- Extracción de archivos y limpieza de TXT corregidas.
-- Lectura de QR en PDF y GIF enrutada correctamente; entradas duplicadas eliminadas.
-- Endurecida para producción: seguridad, estabilidad y rendimiento revisados con las guías de code review de referencia.
+- **Idiomas:** interfaz completa en inglés y español (Ajustes → General → Idioma; opción Sistema), con cambio inmediato en bandeja y rueda.
+- **OCR opcional** para PDF escaneados (`requirements-ocr.txt`): txt/docx recuperan el texto; sin el motor, el error indica cómo instalarlo.
+- **Correcciones:** los lienzos de foto ya no retienen la imagen a resolución completa y el recorte exporta de nuevo a resolución completa.
+- **Vídeo:** el visualizador incluye audio y avisa claramente si la fuente no tiene pista de audio.
+- **Empaquetado:** script `packaging\build.ps1` (PyInstaller + ZIP portátil + instalador Inno Setup), spec, instalador y flujo de compilación.

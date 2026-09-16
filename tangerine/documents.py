@@ -19,6 +19,7 @@ from html.parser import HTMLParser
 from pathlib import Path
 from xml.etree import ElementTree
 
+from . import i18n
 from .engines import (
     Ctx, EngineError, _open_pdf_document, _pdf_mono_font, _render_pdf_pages,
     _unique, text_to_pdf, verify_writable,
@@ -53,11 +54,11 @@ def _open_docx(path: Path):
     try:
         import docx
     except ImportError as exc:
-        raise EngineError("Opening Word files requires the 'python-docx' package.") from exc
+        raise EngineError(i18n.tr("err.doc_package_docx")) from exc
     try:
         return docx.Document(str(path))
     except Exception as exc:
-        raise EngineError("This document could not be opened.") from exc
+        raise EngineError(i18n.tr("err.doc_open")) from exc
 
 
 def _read_docx_text(path: Path) -> str:
@@ -81,22 +82,22 @@ def _read_xlsx_rows(path: Path, ctx: Ctx | None = None) -> list[list[str]]:
     try:
         import openpyxl
     except ImportError as exc:
-        raise EngineError("Opening Excel files requires the 'openpyxl' package.") from exc
+        raise EngineError(i18n.tr("err.doc_package_xlsx")) from exc
     try:
         workbook = openpyxl.load_workbook(str(path), data_only=True, read_only=True)
     except Exception as exc:
-        raise EngineError("This spreadsheet could not be opened.") from exc
+        raise EngineError(i18n.tr("err.doc_spreadsheet")) from exc
     rows: list[list[str]] = []
     try:
         sheet = workbook.active
         for index, values in enumerate(sheet.iter_rows(values_only=True)):
             if ctx is not None and index % 500 == 0 and ctx.cancelled():
-                raise EngineError("Cancelled.")
+                raise EngineError(i18n.tr("err.cancelled"))
             rows.append(["" if value is None else str(value) for value in values])
     except EngineError:
         raise
     except Exception as exc:
-        raise EngineError("This spreadsheet could not be opened.") from exc
+        raise EngineError(i18n.tr("err.doc_spreadsheet")) from exc
     finally:
         try:
             workbook.close()
@@ -110,18 +111,18 @@ def _read_csv_rows(path: Path) -> list[list[str]]:
         with open(path, "r", encoding="utf-8-sig", errors="replace", newline="") as handle:
             return [list(row) for row in _csv.reader(handle)]
     except OSError as exc:
-        raise EngineError("This file could not be opened.") from exc
+        raise EngineError(i18n.tr("err.doc_file")) from exc
 
 
 def _open_presentation(path: Path):
     try:
         from pptx import Presentation
     except ImportError as exc:
-        raise EngineError("Opening PowerPoint files requires the 'python-pptx' package.") from exc
+        raise EngineError(i18n.tr("err.doc_package_pptx")) from exc
     try:
         return Presentation(str(path))
     except Exception as exc:
-        raise EngineError("This presentation could not be opened.") from exc
+        raise EngineError(i18n.tr("err.doc_presentation")) from exc
 
 
 def _slide_text(slide) -> tuple[str, list[str]]:
@@ -160,19 +161,19 @@ def _read_rtf_text(path: Path) -> str:
     try:
         from striprtf.striprtf import rtf_to_text
     except ImportError as exc:
-        raise EngineError("Opening RTF files requires the 'striprtf' package.") from exc
+        raise EngineError(i18n.tr("err.doc_package_rtf")) from exc
     try:
         source = path.read_text("utf-8", errors="replace")
         return rtf_to_text(source)
     except Exception as exc:
-        raise EngineError("This document could not be opened.") from exc
+        raise EngineError(i18n.tr("err.doc_open")) from exc
 
 
 def _markdown_library():
     try:
         import markdown as markdown_library
     except ImportError as exc:
-        raise EngineError("Opening Markdown files requires the 'markdown' package.") from exc
+        raise EngineError(i18n.tr("err.doc_package_md")) from exc
     return markdown_library
 
 
@@ -181,7 +182,7 @@ def _render_markdown(source: str) -> str:
     try:
         return library.markdown(source, extensions=["extra", "sane_lists"])
     except Exception as exc:
-        raise EngineError("This Markdown file could not be opened.") from exc
+        raise EngineError(i18n.tr("err.doc_markdown")) from exc
 
 
 def _read_markdown_text(path: Path) -> str:
@@ -195,11 +196,11 @@ def _read_odt_text(path: Path) -> str:
         from odf.opendocument import load
         from odf.text import P
     except ImportError as exc:
-        raise EngineError("Opening ODT files requires the 'odfpy' package.") from exc
+        raise EngineError(i18n.tr("err.doc_package_odt")) from exc
     try:
         document = load(str(path))
     except Exception as exc:
-        raise EngineError("This document could not be opened.") from exc
+        raise EngineError(i18n.tr("err.doc_open")) from exc
     return "\n".join(
         teletype.extractText(paragraph)
         for paragraph in document.getElementsByType(P)
@@ -214,13 +215,13 @@ def _epub_opf_path(archive: zipfile.ZipFile) -> str:
     try:
         container = ElementTree.fromstring(archive.read("META-INF/container.xml"))
     except (KeyError, ElementTree.ParseError) as exc:
-        raise EngineError("This e-book could not be opened.") from exc
+        raise EngineError(i18n.tr("err.doc_epub")) from exc
     for element in container.iter():
         if _local_name(element.tag) == "rootfile":
             full_path = element.get("full-path")
             if full_path:
                 return full_path.replace("\\", "/")
-    raise EngineError("This e-book could not be opened.")
+    raise EngineError(i18n.tr("err.doc_epub"))
 
 
 def _read_epub_text(path: Path, ctx: Ctx | None = None) -> str:
@@ -239,7 +240,7 @@ def _read_epub_text(path: Path, ctx: Ctx | None = None) -> str:
                 if _local_name(reference.tag) != "itemref":
                     continue
                 if ctx is not None and ctx.cancelled():
-                    raise EngineError("Cancelled.")
+                    raise EngineError(i18n.tr("err.cancelled"))
                 href = manifest.get(reference.get("idref", ""))
                 if not href:
                     continue
@@ -252,7 +253,7 @@ def _read_epub_text(path: Path, ctx: Ctx | None = None) -> str:
     except EngineError:
         raise
     except Exception as exc:
-        raise EngineError("This e-book could not be opened.") from exc
+        raise EngineError(i18n.tr("err.doc_epub")) from exc
     return "\n\n".join(chunk for chunk in chapters if chunk.strip()).strip()
 
 
@@ -270,7 +271,7 @@ def _read_text(path: Path, ctx: Ctx | None = None) -> str:
         return _read_markdown_text(path)
     if ext == ".epub":
         return _read_epub_text(path, ctx)
-    raise EngineError("Unsupported document format.")
+    raise EngineError(i18n.tr("err.doc_unsupported"))
 
 
 def _read_rows(path: Path, ctx: Ctx | None = None) -> list[list[str]]:
@@ -279,7 +280,7 @@ def _read_rows(path: Path, ctx: Ctx | None = None) -> list[list[str]]:
         return _read_xlsx_rows(path, ctx)
     if ext == ".csv":
         return _read_csv_rows(path)
-    raise EngineError("Unsupported document format.")
+    raise EngineError(i18n.tr("err.doc_unsupported"))
 
 
 # ---------------------------------------------------------------------------
@@ -345,7 +346,7 @@ def _html_to_text(markup: str) -> str:
 
 def _write_text(text: str, out_path: Path, ctx: Ctx) -> None:
     if not text.strip():
-        raise EngineError("This document contains no readable text.")
+        raise EngineError(i18n.tr("err.doc_no_text"))
     out_path.write_text(text.rstrip() + "\n", "utf-8")
     ctx.progress(1.0)
 
@@ -359,7 +360,7 @@ def _write_xlsx(rows: list[list[str]], out_path: Path) -> None:
     try:
         import openpyxl
     except ImportError as exc:
-        raise EngineError("Creating Excel files requires the 'openpyxl' package.") from exc
+        raise EngineError(i18n.tr("err.doc_package_xlsx_write")) from exc
     workbook = openpyxl.Workbook()
     sheet = workbook.active
     for row in rows:
@@ -384,9 +385,9 @@ def _rows_to_pdf(rows: list[list[str]], out_path: Path, ctx: Ctx) -> None:
     from reportlab.platypus import Paragraph, SimpleDocTemplate, Table, TableStyle
 
     if ctx.cancelled():
-        raise EngineError("Cancelled.")
+        raise EngineError(i18n.tr("err.cancelled"))
     if not rows:
-        raise EngineError("This file contains no readable rows.")
+        raise EngineError(i18n.tr("err.doc_no_rows"))
     sample = "\n".join("\t".join(row) for row in rows)
     font_name = "Courier"
     bold_name = "Courier-Bold"
@@ -418,7 +419,7 @@ def _rows_to_pdf(rows: list[list[str]], out_path: Path, ctx: Ctx) -> None:
 
     def check_cancelled(canvas, document) -> None:
         if ctx.cancelled():
-            raise EngineError("Cancelled.")
+            raise EngineError(i18n.tr("err.cancelled"))
 
     document = SimpleDocTemplate(
         str(out_path), pagesize=letter,
@@ -432,7 +433,7 @@ def _rows_to_pdf(rows: list[list[str]], out_path: Path, ctx: Ctx) -> None:
         raise
     except Exception as exc:
         out_path.unlink(missing_ok=True)
-        raise EngineError("This file could not be converted to PDF.") from exc
+        raise EngineError(i18n.tr("err.doc_pdf_failed")) from exc
     ctx.progress(1.0)
 
 
@@ -525,7 +526,7 @@ class _TextFlow:
     ) -> None:
         if self._ctx.cancelled():
             self.discard()
-            raise EngineError("Cancelled.")
+            raise EngineError(i18n.tr("err.cancelled"))
         if not text:
             return
         leading = size * 1.35
@@ -589,7 +590,7 @@ def _docx_to_pdf(path: Path, out_path: Path, ctx: Ctx) -> None:
         total = max(len(blocks), 1)
         for index, block in enumerate(blocks):
             if ctx.cancelled():
-                raise EngineError("Cancelled.")
+                raise EngineError(i18n.tr("err.cancelled"))
             if isinstance(block, Paragraph):
                 text = block.text.strip()
                 if text:
@@ -616,11 +617,11 @@ def _pptx_to_pdf(path: Path, out_path: Path, ctx: Ctx) -> None:
     try:
         slides = list(presentation.slides)
         if not slides:
-            raise EngineError("This presentation contains no slides.")
+            raise EngineError(i18n.tr("err.doc_no_slides"))
         total = len(slides)
         for number, slide in enumerate(slides, start=1):
             if ctx.cancelled():
-                raise EngineError("Cancelled.")
+                raise EngineError(i18n.tr("err.cancelled"))
             if number > 1:
                 flow.page_break()
             flow.paragraph(
@@ -651,7 +652,7 @@ def _write_pdf(path: Path, out_path: Path, ctx: Ctx) -> None:
     else:
         text = _read_text(path, ctx)
         if not text.strip():
-            raise EngineError("This document contains no readable text.")
+            raise EngineError(i18n.tr("err.doc_no_text"))
         text_to_pdf(text, out_path, ctx)
 
 
@@ -666,7 +667,7 @@ def _document_to_images(
             pdf = _open_pdf_document(tmp_pdf)
         except EngineError as exc:
             raise EngineError(
-                f"This document could not be rendered as an image: {path.name}"
+                i18n.tr("err.doc_image_failed", name=path.name)
             ) from exc
         try:
             return _render_pdf_pages(pdf, path.parent, path, target, ctx, reserved)
@@ -688,9 +689,9 @@ def convert_document(
 ) -> list[Path]:
     verify_writable(path)
     if ctx.cancelled():
-        raise EngineError("Cancelled.")
+        raise EngineError(i18n.tr("err.cancelled"))
     ext = path.suffix.lower()
-    ctx.status(f"Converting {path.name} to {target.upper()}")
+    ctx.status(i18n.tr("action.converting_file_to", name=path.name, target=target.upper()))
     if target in ("jpg", "png"):
         return _document_to_images(path, target, ctx, reserved)
     out_path = _unique(path.parent, path.stem, f".{target}", reserved)
@@ -708,10 +709,10 @@ def convert_document(
         ctx.progress(1.0)
     elif target == "html":
         if ext != ".md":
-            raise EngineError("Only Markdown files can be converted to HTML.")
+            raise EngineError(i18n.tr("err.doc_html_only_md"))
         _markdown_to_html(path, out_path, ctx)
     elif target == "pdf":
         _write_pdf(path, out_path, ctx)
     else:
-        raise EngineError(f"Unsupported document conversion: {target}")
+        raise EngineError(i18n.tr("err.doc_unsupported_conversion", target=target))
     return [out_path]

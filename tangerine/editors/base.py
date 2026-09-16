@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .. import jobs, progress
+from .. import i18n, jobs, progress
 
 
 # ---------------------------------------------------------------------------
@@ -21,13 +21,12 @@ from .. import jobs, progress
 # ---------------------------------------------------------------------------
 
 def pil_to_qimage(img) -> QImage:
-    rgba = img.convert("RGBA")
+    rgba = img if img.mode == "RGBA" else img.convert("RGBA")
     data = rgba.tobytes("raw", "RGBA")
-    qimage = QImage(
+    return QImage(
         data, rgba.width, rgba.height, rgba.width * 4,
         QImage.Format.Format_RGBA8888,
-    )
-    return qimage.copy()
+    ).copy()
 
 
 def pil_to_pixmap(img, max_w: int, max_h: int) -> QPixmap:
@@ -54,8 +53,8 @@ def run_batch(paths, run_one, title=None) -> None:
 
     if title is None:
         title = (
-            f"Working on {paths[0].name}" if len(paths) == 1
-            else f"Working on {len(paths)} files"
+            i18n.tr("action.working_on", name=paths[0].name) if len(paths) == 1
+            else i18n.tr("action.working_on_many", n=len(paths))
         )
     progress.run_job(title, work)
 
@@ -76,7 +75,7 @@ class ToolDialog(QDialog):
         box = QDialogButtonBox()
         ok = box.addButton(ok_text, QDialogButtonBox.ButtonRole.AcceptRole)
         ok.setProperty("accent", True)
-        cancel = box.addButton("Cancel", QDialogButtonBox.ButtonRole.RejectRole)
+        cancel = box.addButton(i18n.tr("btn.cancel"), QDialogButtonBox.ButtonRole.RejectRole)
         ok.clicked.connect(self._accept_clicked)
         cancel.clicked.connect(self.reject)
         self._body.addWidget(box)

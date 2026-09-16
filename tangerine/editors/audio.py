@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .. import progress, tools
+from .. import i18n, progress, tools
 from ..media import CREATE_NO_WINDOW, ffmpeg_path
 from .base import ToolDialog
 from .ui.waveform import BleepWaveform, PlayerMixin, TrimWaveform
@@ -64,36 +64,37 @@ def audio_peaks(path: Path, buckets: int = 1400) -> list[float]:
 
 class ChannelsDialog(ToolDialog):
     def __init__(self, path, parent: QWidget | None = None):
-        super().__init__("Convert Audio Channels", parent)
+        super().__init__(i18n.tr("dlg.channels.title"), parent)
         self._path = Path(path)
         info = tools.probe(self._path)
         audio = info.audio()
         channels = audio.channels if audio else 0
 
-        heading = QLabel(f"{self._path.name} currently has {channels or '?'} channel(s).")
+        heading = QLabel(i18n.tr(
+            "dlg.channels.heading",
+            name=self._path.name, count=channels or "?"))
         heading.setWordWrap(True)
         self._body.addWidget(heading)
 
-        self.mono = QRadioButton("Mono mixdown")
-        self.stereo = QRadioButton("Two-channel stereo")
+        self.mono = QRadioButton(i18n.tr("opt.mono"))
+        self.stereo = QRadioButton(i18n.tr("opt.stereo"))
         if channels == 1:
             self.stereo.setChecked(True)
         else:
             self.mono.setChecked(True)
         self._body.addWidget(self.mono)
         self._body.addWidget(self.stereo)
-        hint = QLabel("Mono to stereo duplicates the signal. "
-                      "Mono mixdown combines both channels.")
+        hint = QLabel(i18n.tr("dlg.channels.hint"))
         hint.setProperty("dim", True)
         hint.setWordWrap(True)
         self._body.addWidget(hint)
-        self.add_buttons("Save Converted Copy")
+        self.add_buttons(i18n.tr("btn.save_converted"))
 
     def _accept_clicked(self) -> None:
         mode = "mono" if self.mono.isChecked() else "stereo"
         path = self._path
         progress.run_job(
-            f"Converting channels for {path.name}",
+            i18n.tr("action.converting_channels_of", name=path.name),
             lambda ctx: [tools.convert_channels(path, mode, ctx, set())],
         )
         self.accept()
@@ -101,54 +102,55 @@ class ChannelsDialog(ToolDialog):
 
 class VisualizerDialog(ToolDialog):
     def __init__(self, path, parent: QWidget | None = None):
-        super().__init__("Audio Visualizer", parent)
+        super().__init__(i18n.tr("dlg.visualizer.title"), parent)
         self._path = Path(path)
         self._background: Path | None = None
 
         form = QFormLayout()
         form.setSpacing(10)
         self.orientation = QComboBox()
-        self.orientation.addItems(["Landscape 1280 x 720", "Portrait 720 x 1280",
-                                   "Square 1080 x 1080"])
-        form.addRow("Shape", self.orientation)
+        self.orientation.addItems([i18n.tr("opt.landscape"), i18n.tr("opt.portrait"),
+                                   i18n.tr("opt.square")])
+        form.addRow(i18n.tr("lbl.shape"), self.orientation)
         self._body.addLayout(form)
 
         row = QHBoxLayout()
-        self.bg_label = QLabel("Background image: none")
+        self.bg_label = QLabel(i18n.tr("dlg.visualizer.bg_none"))
         self.bg_label.setProperty("dim", True)
-        choose = QPushButton("Choose Image...")
+        choose = QPushButton(i18n.tr("btn.choose_image"))
         choose.clicked.connect(self._choose_background)
-        clear = QPushButton("Clear")
+        clear = QPushButton(i18n.tr("btn.clear"))
         clear.clicked.connect(self._clear_background)
         row.addWidget(self.bg_label, 1)
         row.addWidget(choose)
         row.addWidget(clear)
         self._body.addLayout(row)
 
-        hint = QLabel("The full recording is rendered as a Tangerine-orange waveform "
-                      "on black or your chosen image.")
+        hint = QLabel(i18n.tr("dlg.visualizer.hint"))
         hint.setProperty("dim", True)
         hint.setWordWrap(True)
         self._body.addWidget(hint)
-        self.add_buttons("Create Visualizer")
+        self.add_buttons(i18n.tr("btn.create_visualizer"))
 
     def _choose_background(self) -> None:
         chosen, _ = QFileDialog.getOpenFileName(
-            self, "Background Image", "", "Images (*.png *.jpg *.jpeg *.webp *.bmp)")
+            self, i18n.tr("dlg.visualizer.bg_title"), "",
+            i18n.tr("fmt.images_filter"))
         if chosen:
             self._background = Path(chosen)
-            self.bg_label.setText(f"Background image: {Path(chosen).name}")
+            self.bg_label.setText(
+                i18n.tr("dlg.visualizer.bg_named", name=Path(chosen).name))
 
     def _clear_background(self) -> None:
         self._background = None
-        self.bg_label.setText("Background image: none")
+        self.bg_label.setText(i18n.tr("dlg.visualizer.bg_none"))
 
     def _accept_clicked(self) -> None:
         orientation = ["landscape", "portrait", "square"][self.orientation.currentIndex()]
         path = self._path
         background = self._background
         progress.run_job(
-            f"Building visualizer for {path.name}",
+            i18n.tr("action.building_visualizer", name=path.name),
             lambda ctx: [tools.make_visualizer(path, orientation, background, ctx, set())],
         )
         self.accept()
@@ -156,7 +158,7 @@ class VisualizerDialog(ToolDialog):
 
 class TrimAudioDialog(ToolDialog, PlayerMixin):
     def __init__(self, path, parent: QWidget | None = None):
-        ToolDialog.__init__(self, "Trim Audio", parent)
+        ToolDialog.__init__(self, i18n.tr("dlg.trim_audio.title"), parent)
         self._path = Path(path)
         self._duration = tools.probe_duration_seconds(self._path) or 0.0
         self._setup_player()
@@ -167,7 +169,7 @@ class TrimAudioDialog(ToolDialog, PlayerMixin):
         self.waveform.start = 0.0
         self.waveform.end = self._duration
         self.waveform.changed = self._waveform_changed
-        self.loading = QLabel("Loading waveform…")
+        self.loading = QLabel(i18n.tr("lbl.loading_waveform"))
         self.loading.setProperty("dim", True)
         self._body.addWidget(self.loading)
 
@@ -182,25 +184,25 @@ class TrimAudioDialog(ToolDialog, PlayerMixin):
         self.end_spin.setDecimals(3)
         self.end_spin.setValue(self._duration)
         self.end_spin.setSuffix(" s")
-        form.addRow("Start", self.start_spin)
-        form.addRow("End", self.end_spin)
+        form.addRow(i18n.tr("lbl.start"), self.start_spin)
+        form.addRow(i18n.tr("lbl.end"), self.end_spin)
         self._body.addLayout(form)
         self.start_spin.valueChanged.connect(self._spins_changed)
         self.end_spin.valueChanged.connect(self._spins_changed)
 
         row = QHBoxLayout()
-        play = QPushButton("Play Selection")
+        play = QPushButton(i18n.tr("btn.play_selection"))
         play.clicked.connect(self._play_selection)
-        stop = QPushButton("Stop")
+        stop = QPushButton(i18n.tr("btn.stop"))
         stop.clicked.connect(self._stop_playback)
-        auto = QPushButton("Auto-trim Silence")
+        auto = QPushButton(i18n.tr("btn.auto_trim"))
         auto.clicked.connect(self._auto_trim)
         row.addWidget(play)
         row.addWidget(stop)
         row.addWidget(auto)
         row.addStretch(1)
         self._body.addLayout(row)
-        self.add_buttons("Save Trimmed Copy")
+        self.add_buttons(i18n.tr("btn.save_trimmed"))
         QTimer.singleShot(50, self._load_waveform)
 
     def _load_waveform(self) -> None:
@@ -236,7 +238,9 @@ class TrimAudioDialog(ToolDialog, PlayerMixin):
     def _auto_trim(self) -> None:
         peaks = self.waveform.peaks
         if not peaks:
-            QMessageBox.information(self, "Auto-trim", "The waveform is not available yet.")
+            QMessageBox.information(
+            self, i18n.tr("dlg.trim.auto_title"),
+            i18n.tr("dlg.trim.no_waveform"))
             return
         top = max(peaks)
         if top <= 0:
@@ -246,9 +250,8 @@ class TrimAudioDialog(ToolDialog, PlayerMixin):
         last = next((i for i in range(len(peaks) - 1, -1, -1) if peaks[i] > threshold), None)
         if first is None or last is None or last <= first:
             QMessageBox.information(
-                self, "Auto-trim",
-                "The selected range is silent at this threshold. "
-                "Lower the threshold or turn off automatic trimming.")
+                self, i18n.tr("dlg.trim.auto_title"),
+                i18n.tr("dlg.trim.silent_range"))
             return
         start = (first / len(peaks)) * self._duration
         end = ((last + 1) / len(peaks)) * self._duration
@@ -258,12 +261,14 @@ class TrimAudioDialog(ToolDialog, PlayerMixin):
     def _accept_clicked(self) -> None:
         start, end = self.start_spin.value(), self.end_spin.value()
         if end - start < 0.05:
-            QMessageBox.warning(self, "Trim Audio", "The selected range is too short.")
+            QMessageBox.warning(
+            self, i18n.tr("dlg.trim_audio.title"),
+            i18n.tr("msg.range_too_short"))
             return
         self._stop_playback()
         path = self._path
         progress.run_job(
-            f"Trimming {path.name}",
+            i18n.tr("action.trimming", name=path.name),
             lambda ctx: [tools.trim_audio(path, start, end, ctx, set())],
         )
         self.accept()
@@ -271,7 +276,7 @@ class TrimAudioDialog(ToolDialog, PlayerMixin):
 
 class BleepDialog(ToolDialog, PlayerMixin):
     def __init__(self, path, parent: QWidget | None = None):
-        ToolDialog.__init__(self, "Bleep Audio", parent)
+        ToolDialog.__init__(self, i18n.tr("dlg.bleep.title"), parent)
         self._path = Path(path)
         self._duration = tools.probe_duration_seconds(self._path) or 0.0
         self._setup_player()
@@ -280,7 +285,7 @@ class BleepDialog(ToolDialog, PlayerMixin):
         self.waveform = BleepWaveform()
         self.waveform.duration = self._duration
         self._body.addWidget(self.waveform)
-        self.loading = QLabel("Loading waveform…")
+        self.loading = QLabel(i18n.tr("lbl.loading_waveform"))
         self.loading.setProperty("dim", True)
         self._body.addWidget(self.loading)
 
@@ -294,16 +299,16 @@ class BleepDialog(ToolDialog, PlayerMixin):
         self.end_spin.setRange(0.0, max(self._duration, 0.01))
         self.end_spin.setDecimals(3)
         self.end_spin.setSuffix(" s")
-        form.addRow("Range start", self.start_spin)
-        form.addRow("Range end", self.end_spin)
+        form.addRow(i18n.tr("lbl.range_start"), self.start_spin)
+        form.addRow(i18n.tr("lbl.range_end"), self.end_spin)
         self._body.addLayout(form)
 
         row = QHBoxLayout()
-        add = QPushButton("Add / Update Range")
+        add = QPushButton(i18n.tr("btn.add_range"))
         add.clicked.connect(self._add_range)
-        entire = QPushButton("Bleep Entire Audio")
+        entire = QPushButton(i18n.tr("btn.bleep_entire"))
         entire.clicked.connect(self._bleep_entire)
-        remove = QPushButton("Delete Range")
+        remove = QPushButton(i18n.tr("btn.delete_range"))
         remove.clicked.connect(self._delete_range)
         row.addWidget(add)
         row.addWidget(remove)
@@ -312,23 +317,21 @@ class BleepDialog(ToolDialog, PlayerMixin):
         self._body.addLayout(row)
 
         playback = QHBoxLayout()
-        play = QPushButton("Play Original")
+        play = QPushButton(i18n.tr("btn.play_original"))
         play.clicked.connect(self._play)
-        stop = QPushButton("Stop")
+        stop = QPushButton(i18n.tr("btn.stop"))
         stop.clicked.connect(self._stop_playback)
         playback.addWidget(play)
         playback.addWidget(stop)
         playback.addStretch(1)
         self._body.addLayout(playback)
 
-        hint = QLabel("Drag across the waveform to add a range, then drag a range or "
-                      "either edge to adjust it. A 1 kHz tone replaces the samples "
-                      "inside every range on all channels.")
+        hint = QLabel(i18n.tr("dlg.bleep.hint"))
         hint.setProperty("dim", True)
         hint.setWordWrap(True)
         self._body.addWidget(hint)
         self.waveform.changed = self._waveform_changed
-        self.add_buttons("Save Bleeped Copy")
+        self.add_buttons(i18n.tr("btn.save_bleeped"))
         QTimer.singleShot(50, self._load_waveform)
 
     def _load_waveform(self) -> None:
@@ -349,7 +352,9 @@ class BleepDialog(ToolDialog, PlayerMixin):
     def _add_range(self) -> None:
         start, end = sorted((self.start_spin.value(), self.end_spin.value()))
         if end - start < 0.02:
-            QMessageBox.warning(self, "Bleep Audio", "The range is too short.")
+            QMessageBox.warning(
+            self, i18n.tr("dlg.bleep.title"),
+            i18n.tr("dlg.bleep.range_short"))
             return
         self.waveform.ranges.append([start, end])
         self.waveform.selected = len(self.waveform.ranges) - 1
@@ -382,12 +387,14 @@ class BleepDialog(ToolDialog, PlayerMixin):
     def _accept_clicked(self) -> None:
         ranges = [tuple(r) for r in self.waveform.ranges]
         if not ranges:
-            QMessageBox.warning(self, "Bleep Audio", "Add at least one bleep range first.")
+            QMessageBox.warning(
+            self, i18n.tr("dlg.bleep.title"),
+            i18n.tr("dlg.bleep.need_range"))
             return
         self._stop_playback()
         path = self._path
         progress.run_job(
-            f"Bleeping {path.name}",
+            i18n.tr("action.bleeping", name=path.name),
             lambda ctx: [tools.bleep_audio(path, ranges, ctx, set())],
         )
         self.accept()

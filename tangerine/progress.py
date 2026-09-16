@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout, QLabel, QPlainTextEdit, QPushButton, QVBoxLayout, QWidget,
 )
 
-from . import theme
+from . import i18n, theme
 from .jobs import Job
 
 log = logging.getLogger("tangerine")
@@ -118,7 +118,7 @@ class ProgressWindow(QWidget):
         header.addWidget(close_btn)
         layout.addLayout(header)
 
-        self.status_label = QLabel("Starting…")
+        self.status_label = QLabel(i18n.tr("progress.starting"))
         self.status_label.setProperty("muted", True)
         self.status_label.setStyleSheet(f"color: {p['text_dim']};")
         self.status_label.setWordWrap(True)
@@ -133,11 +133,11 @@ class ProgressWindow(QWidget):
         self.error_view.setFixedHeight(120)
         layout.addWidget(self.error_view)
 
-        self.cancel_btn = QPushButton("Cancel")
+        self.cancel_btn = QPushButton(i18n.tr("progress.cancel"))
         self.cancel_btn.clicked.connect(self._cancel_clicked)
         layout.addWidget(self.cancel_btn)
 
-        self.dismiss_btn = QPushButton("Dismiss")
+        self.dismiss_btn = QPushButton(i18n.tr("progress.dismiss"))
         self.dismiss_btn.setVisible(False)
         self.dismiss_btn.clicked.connect(self.close)
         layout.addWidget(self.dismiss_btn)
@@ -177,7 +177,7 @@ class ProgressWindow(QWidget):
 
     def _cancel_clicked(self) -> None:
         self.job.cancel()
-        self.status_label.setText("Cancelling…")
+        self.status_label.setText(i18n.tr("progress.cancelling"))
 
     def _on_finished(self, outputs: list) -> None:
         self._job_done = True
@@ -196,7 +196,7 @@ class ProgressWindow(QWidget):
             elif attempts[0] >= 50:
                 check_timer.stop()
                 self.bar.set_value(1.0)
-                self.status_label.setText("Finished (output not confirmed)")
+                self.status_label.setText(i18n.tr("progress.output_unconfirmed"))
                 self.close()
 
         check_timer.timeout.connect(verify)
@@ -214,9 +214,9 @@ class ProgressWindow(QWidget):
             return
         self.bar.set_value(0.0)
         if self.job.cancel_event.is_set():
-            self.status_label.setText("Cancelled.")
+            self.status_label.setText(i18n.tr("progress.cancelled"))
         else:
-            self.status_label.setText("The operation failed.")
+            self.status_label.setText(i18n.tr("progress.operation_failed"))
         self.error_view.setPlainText(message)
         self.error_view.setVisible(True)
         self.dismiss_btn.setVisible(True)

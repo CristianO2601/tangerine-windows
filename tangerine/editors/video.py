@@ -6,8 +6,6 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from PIL import ImageOps
-
 from PySide6.QtCore import QSize, Qt, QTimer
 from PySide6.QtGui import QColor, QPixmap
 from PySide6.QtWidgets import (
@@ -29,9 +27,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .. import progress, tools
+from .. import i18n, progress, tools
 from ..media import CREATE_NO_WINDOW, ffmpeg_path
-from .base import ToolDialog, pil_to_qimage
+from .base import ToolDialog
 from .ui.canvas import CropCanvas
 from .ui.video import BoxDrawDialog, VideoPane
 
@@ -74,7 +72,7 @@ def _frame_pixmap(path: Path, seconds: float, width: int = 160) -> QPixmap | Non
 
 class TrimVideoDialog(ToolDialog):
     def __init__(self, path, parent: QWidget | None = None):
-        super().__init__("Trim Video", parent)
+        super().__init__(i18n.tr("dlg.trim_video.title"), parent)
         self._path = Path(path)
         self._duration = tools.probe_duration_seconds(self._path) or 0.0
         self.pane = VideoPane(self._path, height=280)
@@ -91,18 +89,18 @@ class TrimVideoDialog(ToolDialog):
         self.end_spin.setDecimals(3)
         self.end_spin.setValue(self._duration)
         self.end_spin.setSuffix(" s")
-        form.addRow("Start", self.start_spin)
-        form.addRow("End", self.end_spin)
+        form.addRow(i18n.tr("lbl.start"), self.start_spin)
+        form.addRow(i18n.tr("lbl.end"), self.end_spin)
         self._body.addLayout(form)
 
         row = QHBoxLayout()
-        set_in = QPushButton("Set In from Playhead")
+        set_in = QPushButton(i18n.tr("btn.set_in"))
         set_in.clicked.connect(lambda: self.start_spin.setValue(
             self.pane._player.position() / 1000.0))
-        set_out = QPushButton("Set Out from Playhead")
+        set_out = QPushButton(i18n.tr("btn.set_out"))
         set_out.clicked.connect(lambda: self.end_spin.setValue(
             self.pane._player.position() / 1000.0))
-        play = QPushButton("Play Selection")
+        play = QPushButton(i18n.tr("btn.play_selection"))
         play.clicked.connect(self._play_selection)
         row.addWidget(set_in)
         row.addWidget(set_out)
@@ -112,7 +110,7 @@ class TrimVideoDialog(ToolDialog):
 
         self._limit_active = False
         self.pane._player.positionChanged.connect(self._enforce_limit)
-        self.add_buttons("Save Trimmed Copy")
+        self.add_buttons(i18n.tr("btn.save_trimmed"))
 
     def _play_selection(self) -> None:
         self._limit_active = True
@@ -127,11 +125,13 @@ class TrimVideoDialog(ToolDialog):
     def _accept_clicked(self) -> None:
         start, end = self.start_spin.value(), self.end_spin.value()
         if end - start < 0.05:
-            QMessageBox.warning(self, "Trim Video", "The selected range is too short.")
+            QMessageBox.warning(
+            self, i18n.tr("dlg.trim_video.title"),
+            i18n.tr("msg.range_too_short"))
             return
         path = self._path
         progress.run_job(
-            f"Trimming {path.name}",
+            i18n.tr("action.trimming", name=path.name),
             lambda ctx: [tools.trim_video(path, start, end, ctx, set())],
         )
         self.accept()
@@ -139,45 +139,45 @@ class TrimVideoDialog(ToolDialog):
 
 class CropVideoDialog(ToolDialog):
     def __init__(self, path, parent: QWidget | None = None):
-        super().__init__("Crop Video", parent)
+        super().__init__(i18n.tr("dlg.crop_video.title"), parent)
         self._path = Path(path)
         self._duration = tools.probe_duration_seconds(self._path) or 0.0
         self._frame = None
         self.canvas = None
-        self.loading = QLabel("Loading preview…")
+        self.loading = QLabel(i18n.tr("lbl.loading_preview"))
         self.loading.setProperty("dim", True)
         self._body.addWidget(self.loading)
 
         row = QHBoxLayout()
-        row.addWidget(QLabel("Frame at"))
+        row.addWidget(QLabel(i18n.tr("lbl.frame_at")))
         self.time_spin = QDoubleSpinBox()
         self.time_spin.setRange(0.0, max(self._duration, 0.01))
         self.time_spin.setDecimals(2)
         self.time_spin.setValue(min(self._duration / 2.0, 3.0))
         self.time_spin.setSuffix(" s")
         row.addWidget(self.time_spin)
-        refresh = QPushButton("Refresh Frame")
+        refresh = QPushButton(i18n.tr("btn.refresh_frame"))
         refresh.clicked.connect(self._refresh_frame)
         row.addWidget(refresh)
         row.addSpacing(12)
         self.aspect = QComboBox()
-        self.aspect.addItems(["Free", "1:1", "3:2", "4:3", "16:9", "9:16"])
-        row.addWidget(QLabel("Aspect"))
+        self.aspect.addItems([i18n.tr("opt.free"), "1:1", "3:2", "4:3", "16:9", "9:16"])
+        row.addWidget(QLabel(i18n.tr("lbl.aspect")))
         row.addWidget(self.aspect)
         row.addStretch(1)
         self._body.addLayout(row)
 
         self.aspect.currentIndexChanged.connect(self._aspect_changed)
-        select_all = QPushButton("Select All")
+        select_all = QPushButton(i18n.tr("btn.select_all"))
         select_all.clicked.connect(self._select_all)
         row.addWidget(select_all)
-        self.add_buttons("Crop Video")
+        self.add_buttons(i18n.tr("btn.crop_video"))
         QTimer.singleShot(50, self._load_frame)
 
     def _load_frame(self) -> None:
         frame = _grab_frame(self._path, min(self._duration / 2.0, 3.0))
         if frame is None:
-            self.loading.setText("Could not read a frame from this video.")
+            self.loading.setText(i18n.tr("dlg.crop_video.no_frame"))
             return
         self._frame = frame
         self.canvas = CropCanvas(frame)
@@ -189,16 +189,15 @@ class CropVideoDialog(ToolDialog):
     def _select_all(self) -> None:
         if self.canvas is None:
             return
-        self.canvas.rect = [0.0, 0.0, float(self.canvas.image.width),
-                            float(self.canvas.image.height)]
+        self.canvas.rect = [0.0, 0.0, float(self.canvas.image_size[0]),
+                            float(self.canvas.image_size[1])]
         self.canvas.update()
 
     def _refresh_frame(self) -> None:
         frame = _grab_frame(self._path, self.time_spin.value())
         if frame is None or self.canvas is None:
             return
-        self.canvas.image = ImageOps.exif_transpose(tools.load_image(frame)).convert("RGBA")
-        self.canvas.pixmap = QPixmap.fromImage(pil_to_qimage(self.canvas.image))
+        self.canvas.load(frame)
         self._select_all()
 
     def _aspect_changed(self) -> None:
@@ -208,7 +207,7 @@ class CropVideoDialog(ToolDialog):
         ratio = ratios[self.aspect.currentIndex()]
         if ratio is None:
             return
-        img_w, img_h = self.canvas.image.width, self.canvas.image.height
+        img_w, img_h = self.canvas.image_size
         w = min(img_w, img_h * ratio)
         h = w / ratio
         if h > img_h:
@@ -219,24 +218,29 @@ class CropVideoDialog(ToolDialog):
 
     def _accept_clicked(self) -> None:
         if self.canvas is None:
-            QMessageBox.warning(self, "Crop Video", "The preview frame is not ready yet.")
+            QMessageBox.warning(
+            self, i18n.tr("dlg.crop_video.title"),
+            i18n.tr("msg.crop_video.not_ready"))
             return
         x, y, w, h = self.canvas.rect
         box = (int(round(x)), int(round(y)), int(round(w)), int(round(h)))
         if box[2] < 16 or box[3] < 16:
-            QMessageBox.warning(self, "Crop Video", "Select a larger crop area.")
+            QMessageBox.warning(
+            self, i18n.tr("dlg.crop_video.title"),
+            i18n.tr("msg.crop_video.larger"))
             return
         full = (box[0] <= 0 and box[1] <= 0
-                and box[2] >= self.canvas.image.width and box[3] >= self.canvas.image.height)
+                and box[2] >= self.canvas.image_size[0]
+                and box[3] >= self.canvas.image_size[1])
         path = self._path
         progress.run_job(
-            f"Cropping {path.name}",
+            i18n.tr("action.cropping", name=path.name),
             lambda ctx: [tools.crop_video(path, box, ctx, set())],
         )
         if full:
             QMessageBox.information(
-                self, "Crop Video",
-                "The whole frame is selected, so a byte-identical copy will be saved.")
+                self, i18n.tr("dlg.crop_video.title"),
+                i18n.tr("msg.crop_video.full_frame"))
         self.accept()
 
 
@@ -244,7 +248,7 @@ class SpeedDialog(ToolDialog):
     SNAPS = [25, 50, 75, 100, 125, 150, 200, 300, 400]
 
     def __init__(self, path, parent: QWidget | None = None):
-        super().__init__("Change Speed", parent)
+        super().__init__(i18n.tr("dlg.speed.title"), parent)
         self._path = Path(path)
         self.pane = VideoPane(self._path, height=260)
         self._body.addWidget(self.pane)
@@ -260,12 +264,11 @@ class SpeedDialog(ToolDialog):
         self._body.addLayout(row)
         self.slider.valueChanged.connect(self._value_changed)
 
-        hint = QLabel("Preview playback uses the selected speed. Audio pitch is "
-                      "preserved by the encoder.")
+        hint = QLabel(i18n.tr("dlg.speed.hint"))
         hint.setProperty("dim", True)
         hint.setWordWrap(True)
         self._body.addWidget(hint)
-        self.add_buttons("Save Speed Change")
+        self.add_buttons(i18n.tr("btn.save_speed"))
 
     def _value_changed(self, value: int) -> None:
         for snap in self.SNAPS:
@@ -289,11 +292,12 @@ class SpeedDialog(ToolDialog):
     def _accept_clicked(self) -> None:
         factor = self.factor()
         if abs(factor - 1.0) < 0.001:
-            QMessageBox.information(self, "Change Speed", "Choose a speed other than 1.00x.")
+            QMessageBox.information(
+            self, i18n.tr("dlg.speed.title"), i18n.tr("dlg.speed.same"))
             return
         path = self._path
         progress.run_job(
-            f"Changing speed of {path.name}",
+            i18n.tr("action.changing_speed", name=path.name),
             lambda ctx: [tools.change_speed(path, factor, ctx, set())],
         )
         self.accept()
@@ -301,22 +305,22 @@ class SpeedDialog(ToolDialog):
 
 class SnapshotsDialog(ToolDialog):
     def __init__(self, path, parent: QWidget | None = None):
-        super().__init__("Snapshots", parent)
+        super().__init__(i18n.tr("dlg.snapshots.title"), parent)
         self._path = Path(path)
         self._duration = tools.probe_duration_seconds(self._path) or 0.0
         self.pane = VideoPane(self._path, height=250)
         self._body.addWidget(self.pane)
 
         row = QHBoxLayout()
-        play = QPushButton("Play")
+        play = QPushButton(i18n.tr("btn.play"))
         play.clicked.connect(self.pane.play)
-        stop = QPushButton("Stop")
+        stop = QPushButton(i18n.tr("btn.stop"))
         stop.clicked.connect(self.pane._player.stop)
-        back = QPushButton("◀ Frame")
+        back = QPushButton(i18n.tr("btn.frame_back"))
         back.clicked.connect(lambda: self._step(-1))
-        forward = QPushButton("Frame ▶")
+        forward = QPushButton(i18n.tr("btn.frame_forward"))
         forward.clicked.connect(lambda: self._step(1))
-        capture = QPushButton("Add Current Frame")
+        capture = QPushButton(i18n.tr("btn.add_frame"))
         capture.setProperty("accent", True)
         capture.clicked.connect(self._capture)
         for widget in (play, stop, back, forward, capture):
@@ -330,7 +334,7 @@ class SnapshotsDialog(ToolDialog):
         self.strip.setFixedHeight(112)
         self.strip.setMovement(QListWidget.Movement.Static)
         self._body.addWidget(self.strip)
-        remove = QPushButton("Remove Selected")
+        remove = QPushButton(i18n.tr("btn.remove_selected"))
         remove.clicked.connect(self._remove_selected)
         row2 = QHBoxLayout()
         row2.addWidget(remove)
@@ -338,10 +342,10 @@ class SnapshotsDialog(ToolDialog):
         self._body.addLayout(row2)
         self._times: list[float] = []
         self._fps = 30.0
-        self.loading = QLabel("Loading…")
+        self.loading = QLabel(i18n.tr("lbl.loading"))
         self.loading.setProperty("dim", True)
         self._body.addWidget(self.loading)
-        self.add_buttons("Export Snapshots")
+        self.add_buttons(i18n.tr("btn.export_snapshots"))
         QTimer.singleShot(50, self._load_media_info)
 
     def _load_media_info(self) -> None:
@@ -361,7 +365,9 @@ class SnapshotsDialog(ToolDialog):
         seconds = self.pane._player.position() / 1000.0
         pixmap = _frame_pixmap(self._path, seconds)
         if pixmap is None:
-            QMessageBox.warning(self, "Snapshots", "Could not read this frame.")
+            QMessageBox.warning(
+            self, i18n.tr("dlg.snapshots.title"),
+            i18n.tr("dlg.snapshots.no_frame"))
             return
         item = QListWidgetItem(QPixmap(pixmap))
         item.setToolTip(f"{seconds:.3f} s")
@@ -376,12 +382,14 @@ class SnapshotsDialog(ToolDialog):
 
     def _accept_clicked(self) -> None:
         if not self._times:
-            QMessageBox.warning(self, "Snapshots", "Add at least one frame.")
+            QMessageBox.warning(
+            self, i18n.tr("dlg.snapshots.title"),
+            i18n.tr("dlg.snapshots.need_frame"))
             return
         path = self._path
         timestamps = list(self._times)
         progress.run_job(
-            f"Exporting snapshots for {path.name}",
+            i18n.tr("action.exporting_snapshots", name=path.name),
             lambda ctx: tools.take_snapshots(path, timestamps, ctx, set()),
         )
         self.accept()
@@ -389,7 +397,7 @@ class SnapshotsDialog(ToolDialog):
 
 class SplitVideoDialog(ToolDialog):
     def __init__(self, path, parent: QWidget | None = None):
-        super().__init__("Split Video", parent)
+        super().__init__(i18n.tr("dlg.split_video.title"), parent)
         self._path = Path(path)
         self._duration = tools.probe_duration_seconds(self._path) or 0.0
 
@@ -401,31 +409,31 @@ class SplitVideoDialog(ToolDialog):
         self.parts = QSpinBox()
         self.parts.setRange(2, 20)
         self.parts.setValue(2)
-        form.addRow("Number of sections", self.parts)
+        form.addRow(i18n.tr("lbl.sections"), self.parts)
         self._body.addLayout(form)
         self.section_label = QLabel()
         self.section_label.setProperty("dim", True)
         self._body.addWidget(self.section_label)
         self.parts.valueChanged.connect(self._update_label)
         self._update_label()
-        hint = QLabel("Every section is written as a separate file inside a new folder "
-                      "beside the source.")
+        hint = QLabel(i18n.tr("dlg.split_video.hint"))
         hint.setProperty("dim", True)
         hint.setWordWrap(True)
         self._body.addWidget(hint)
-        self.add_buttons("Split Video")
+        self.add_buttons(i18n.tr("btn.split_video"))
 
     def _update_label(self) -> None:
         if self._duration:
-            self.section_label.setText(
-                f"About {self._duration / self.parts.value():.2f} s per section "
-                f"({self._duration:.2f} s total).")
+            self.section_label.setText(i18n.tr(
+                "dlg.split_video.about",
+                per=f"{self._duration / self.parts.value():.2f}",
+                total=f"{self._duration:.2f}"))
 
     def _accept_clicked(self) -> None:
         path = self._path
         parts = self.parts.value()
         progress.run_job(
-            f"Splitting {path.name}",
+            i18n.tr("action.splitting", name=path.name),
             lambda ctx: [tools.split_video(path, parts, ctx, set())],
         )
         self.accept()
@@ -433,7 +441,7 @@ class SplitVideoDialog(ToolDialog):
 
 class RedactVideoDialog(ToolDialog):
     def __init__(self, path, parent: QWidget | None = None):
-        super().__init__("Redact Video", parent)
+        super().__init__(i18n.tr("dlg.redact_video.title"), parent)
         self._path = Path(path)
         self._duration = tools.probe_duration_seconds(self._path) or 0.0
         self.pane = VideoPane(self._path, height=260)
@@ -442,17 +450,18 @@ class RedactVideoDialog(ToolDialog):
         from PySide6.QtWidgets import QTableWidget
 
         self.table = QTableWidget(0, 6)
-        self.table.setHorizontalHeaderLabels(["Start", "End", "X", "Y", "W", "H"])
+        self.table.setHorizontalHeaderLabels(
+            [i18n.tr("lbl.start"), i18n.tr("lbl.end"), "X", "Y", "W", "H"])
         self.table.verticalHeader().setVisible(False)
         self.table.setMinimumHeight(140)
         self._body.addWidget(self.table)
 
         row = QHBoxLayout()
-        draw = QPushButton("Draw Box from Frame...")
+        draw = QPushButton(i18n.tr("btn.draw_box"))
         draw.clicked.connect(self._draw_box)
-        extend = QPushButton("Extend to End")
+        extend = QPushButton(i18n.tr("btn.extend_end"))
         extend.clicked.connect(self._extend)
-        remove = QPushButton("Delete Selected")
+        remove = QPushButton(i18n.tr("btn.delete_selected"))
         remove.clicked.connect(self._delete)
         row.addWidget(draw)
         row.addWidget(extend)
@@ -462,27 +471,26 @@ class RedactVideoDialog(ToolDialog):
 
         row2 = QHBoxLayout()
         self.mode = QComboBox()
-        self.mode.addItems(["Solid", "Blur"])
-        self.color_button = QPushButton("Color")
+        self.mode.addItems([i18n.tr("opt.solid"), i18n.tr("opt.blur")])
+        self.color_button = QPushButton(i18n.tr("btn.color"))
         self._color = QColor("#000000")
         self._sync_color()
         self.color_button.clicked.connect(self._pick_color)
-        row2.addWidget(QLabel("Effect"))
+        row2.addWidget(QLabel(i18n.tr("lbl.effect")))
         row2.addWidget(self.mode)
         row2.addWidget(self.color_button)
         row2.addStretch(1)
         self._body.addLayout(row2)
 
-        hint = QLabel("Boxes stay fixed in the frame. The saved video burns the effect "
-                      "into pixels and keeps the chosen soundtrack.")
+        hint = QLabel(i18n.tr("dlg.redact_video.hint"))
         hint.setProperty("dim", True)
         hint.setWordWrap(True)
         self._body.addWidget(hint)
         self._frame_size = (0, 0)
-        self.loading = QLabel("Loading…")
+        self.loading = QLabel(i18n.tr("lbl.loading"))
         self.loading.setProperty("dim", True)
         self._body.addWidget(self.loading)
-        self.add_buttons("Save Redacted Copy")
+        self.add_buttons(i18n.tr("btn.save_redacted"))
         QTimer.singleShot(50, self._load_frame_size)
 
     def _load_frame_size(self) -> None:
@@ -496,7 +504,8 @@ class RedactVideoDialog(ToolDialog):
             f"border-left: 16px solid {self._color.name()}; padding-left: 8px;")
 
     def _pick_color(self) -> None:
-        chosen = QColorDialog.getColor(self._color, self, "Redaction Color")
+        chosen = QColorDialog.getColor(
+            self._color, self, i18n.tr("dlg.redact.color_title"))
         if chosen.isValid():
             self._color = chosen
             self._sync_color()
@@ -505,7 +514,9 @@ class RedactVideoDialog(ToolDialog):
         seconds = self.pane._player.position() / 1000.0
         frame = _grab_frame(self._path, seconds)
         if frame is None:
-            QMessageBox.warning(self, "Redact Video", "Could not read this frame.")
+            QMessageBox.warning(
+            self, i18n.tr("dlg.redact_video.title"),
+            i18n.tr("dlg.snapshots.no_frame"))
             return
         dialog = BoxDrawDialog(frame, self)
         if dialog.exec() == QDialog.DialogCode.Accepted and dialog.box is not None:
@@ -557,20 +568,22 @@ class RedactVideoDialog(ToolDialog):
         if invalid:
             rows = ", ".join(str(number) for number in invalid)
             QMessageBox.warning(
-                self, "Redact Video",
-                f"Rows {rows} were ignored: invalid times or size.")
+                self, i18n.tr("dlg.redact_video.title"),
+                i18n.tr("dlg.redact_video.rows_ignored", rows=rows))
         return boxes
 
     def _accept_clicked(self) -> None:
         boxes = self._boxes()
         if not boxes:
-            QMessageBox.warning(self, "Redact Video", "Add at least one valid redaction box.")
+            QMessageBox.warning(
+            self, i18n.tr("dlg.redact_video.title"),
+            i18n.tr("dlg.redact_video.need_box"))
             return
         mode = "solid" if self.mode.currentIndex() == 0 else "blur"
         path = self._path
         color = self._color.name()
         progress.run_job(
-            f"Redacting {path.name}",
+            i18n.tr("action.redacting", name=path.name),
             lambda ctx: [tools.redact_video(path, boxes, mode, color, ctx, set())],
         )
         self.accept()
@@ -578,16 +591,16 @@ class RedactVideoDialog(ToolDialog):
 
 class JoinDialog(ToolDialog):
     def __init__(self, paths, parent: QWidget | None = None):
-        super().__init__("Join Videos", parent)
+        super().__init__(i18n.tr("dlg.join.title"), parent)
         self._paths = [Path(p) for p in paths]
-        order = QGroupBox("Order")
+        order = QGroupBox(i18n.tr("lbl.order"))
         layout = QHBoxLayout(order)
         self.list = QListWidget()
         self.list.setMinimumHeight(180)
         layout.addWidget(self.list, 1)
         buttons = QVBoxLayout()
-        up = QPushButton("Move up")
-        down = QPushButton("Move down")
+        up = QPushButton(i18n.tr("btn.move_up"))
+        down = QPushButton(i18n.tr("btn.move_down"))
         up.clicked.connect(lambda: self._move(-1))
         down.clicked.connect(lambda: self._move(1))
         buttons.addWidget(up)
@@ -600,12 +613,11 @@ class JoinDialog(ToolDialog):
             self.list.addItem(item)
         self.list.setCurrentRow(0)
         self._body.addWidget(order)
-        hint = QLabel("Clips are fitted to the first video's shape (up to 1920 px on the "
-                      "longest edge) and joined at 30 fps with normalized audio.")
+        hint = QLabel(i18n.tr("dlg.join.hint"))
         hint.setProperty("dim", True)
         hint.setWordWrap(True)
         self._body.addWidget(hint)
-        self.add_buttons("Join Videos")
+        self.add_buttons(i18n.tr("btn.join_videos"))
 
     def _move(self, delta: int) -> None:
         row = self.list.currentRow()
@@ -633,7 +645,7 @@ class JoinDialog(ToolDialog):
     def _accept_clicked(self) -> None:
         ordered = self._ordered()
         progress.run_job(
-            "Joining videos",
+            i18n.tr("action.joining"),
             lambda ctx: [tools.join_videos(ordered, ctx, set())],
         )
         self.accept()

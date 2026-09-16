@@ -23,7 +23,7 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import QWidget
 
 from . import paths as app_paths
-from . import settings, theme
+from . import i18n, settings, theme
 from .icons import icon_for
 
 log = logging.getLogger("tangerine")
@@ -61,7 +61,7 @@ class TangerineWheel(QWidget):
         self._items: list[FanItem] = []
         self._file_paths: list[str] = []
         self._hover = -1
-        self._prompt = ("Tangerine", "")
+        self._prompt = (i18n.tr("app.name"), "")
         self._mode = "conversion"
         self._factory: Callable[[list[str]], Sequence[FanItem]] | None = None
         self._sound = None
@@ -181,7 +181,10 @@ class TangerineWheel(QWidget):
         if not self._items:
             event.ignore()
             return
-        subtitle = Path(files[0]).name if len(files) == 1 else f"{len(files)} files"
+        subtitle = (
+            Path(files[0]).name if len(files) == 1
+            else i18n.tr("wheel.files_count", n=len(files))
+        )
         self._prompt = (self._prompt[0], subtitle)
         self.update()
         self._accept_copy(event)

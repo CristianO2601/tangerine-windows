@@ -12,7 +12,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFilter, ImageOps
 
-from . import naming
+from . import i18n, naming
 from .engines import CODEC_ARGS, Ctx, EngineError, _finish_ffmpeg, load_image, verify_writable, _flatten
 from .media import probe, probe_duration_seconds, run_ffmpeg
 
@@ -30,7 +30,7 @@ def compress_image(
     ctx: Ctx, reserved: set[Path],
 ) -> Path:
     verify_writable(path)
-    ctx.status(f"Compressing {path.name}")
+    ctx.status(i18n.tr("action.compressing", name=path.name))
     original_size = path.stat().st_size
     img = load_image(path)
     if img.getexif().get(274, 1) != 1:
@@ -156,7 +156,7 @@ def compress_image(
 def compress_video(path: Path, strength: str, ctx: Ctx, reserved: set[Path]) -> Path:
     verify_writable(path)
     info = probe(path)
-    ctx.status(f"Compressing {path.name}")
+    ctx.status(i18n.tr("action.compressing", name=path.name))
     original_size = path.stat().st_size
     source_bitrate = info.video_bit_rate() or 2_000_000
     factor = 0.5 if strength == "strong" else 0.8
@@ -190,7 +190,7 @@ def compress_video(path: Path, strength: str, ctx: Ctx, reserved: set[Path]) -> 
     if code == -9:
         _finish_ffmpeg(code, out_path)
     if code != 0 or not out_path.exists():
-        raise EngineError("FFmpeg could not compress this video.")
+        raise EngineError(i18n.tr("err.video_compress"))
     if out_path.stat().st_size >= original_size:
         shutil.copy2(path, out_path)
     return out_path
@@ -205,15 +205,15 @@ def compress_document(path: Path, ctx: Ctx, reserved: set[Path]) -> Path:
     """
     verify_writable(path)
     if path.suffix.lower() not in (".docx", ".xlsx", ".pptx"):
-        raise EngineError("Only Word, Excel, and PowerPoint files can be compressed.")
-    ctx.status(f"Compressing {path.name}")
+        raise EngineError(i18n.tr("err.doc_compress_type"))
+    ctx.status(i18n.tr("action.compressing", name=path.name))
     original_size = path.stat().st_size
     buffer = io.BytesIO()
     with zipfile.ZipFile(path) as source:
         with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as target:
             for info in source.infolist():
                 if ctx.cancelled():
-                    raise EngineError("Cancelled.")
+                    raise EngineError(i18n.tr("err.cancelled"))
                 target.writestr(
                     info, source.read(info.filename),
                     compress_type=zipfile.ZIP_DEFLATED, compresslevel=9,
@@ -236,7 +236,7 @@ def compress_document(path: Path, ctx: Ctx, reserved: set[Path]) -> Path:
 def compress_audio(path: Path, strength: str, ctx: Ctx, reserved: set[Path]) -> Path:
     verify_writable(path)
     info = probe(path)
-    ctx.status(f"Compressing {path.name}")
+    ctx.status(i18n.tr("action.compressing", name=path.name))
     original_size = path.stat().st_size
     source_bitrate = (info.audio().bit_rate if info.audio() and info.audio().bit_rate else 192_000)
     factor = 0.5 if strength == "strong" else 0.8
@@ -252,7 +252,7 @@ def compress_audio(path: Path, strength: str, ctx: Ctx, reserved: set[Path]) -> 
     if code == -9:
         _finish_ffmpeg(code, out_path)
     if code != 0 or not out_path.exists():
-        raise EngineError("FFmpeg could not compress this audio file.")
+        raise EngineError(i18n.tr("err.audio_compress"))
     if out_path.stat().st_size >= original_size:
         shutil.copy2(path, out_path)
     return out_path
@@ -304,23 +304,23 @@ def read_metadata(path: Path) -> list[tuple[str, str]]:
     else:
         info = probe(path)
         if info.duration:
-            rows.append(("Duration", f"{info.duration:.2f} s"))
+            rows.append((i18n.tr("meta.duration"), f"{info.duration:.2f} s"))
         if info.bit_rate:
-            rows.append(("Overall bitrate", f"{info.bit_rate / 1000:.0f} kbps"))
+            rows.append((i18n.tr("meta.overall_bitrate"), f"{info.bit_rate / 1000:.0f} kbps"))
         video = info.video()
         if video:
-            rows.append(("Video codec", video.codec))
+            rows.append((i18n.tr("meta.video_codec"), video.codec))
             if video.width:
-                rows.append(("Dimensions", f"{video.width} x {video.height}"))
+                rows.append((i18n.tr("meta.dimensions"), f"{video.width} x {video.height}"))
             if video.fps:
-                rows.append(("Frame rate", f"{video.fps:.3f} fps"))
+                rows.append((i18n.tr("meta.frame_rate"), f"{video.fps:.3f} fps"))
         audio = info.audio()
         if audio:
-            rows.append(("Audio codec", audio.codec))
+            rows.append((i18n.tr("meta.audio_codec"), audio.codec))
             if audio.channels:
-                rows.append(("Channels", str(audio.channels)))
+                rows.append((i18n.tr("meta.channels"), str(audio.channels)))
             if audio.sample_rate:
-                rows.append(("Sample rate", f"{audio.sample_rate} Hz"))
+                rows.append((i18n.tr("meta.sample_rate"), f"{audio.sample_rate} Hz"))
     if path.suffix.lower() == ".pdf":
         try:
             from pypdf import PdfReader
@@ -336,7 +336,7 @@ def read_metadata(path: Path) -> list[tuple[str, str]]:
 
 def write_metadata_image(path: Path, fields: dict[int, str], strip_all: bool, ctx: Ctx, reserved: set[Path]) -> Path:
     verify_writable(path)
-    ctx.status(f"Writing metadata for {path.name}")
+    ctx.status(i18n.tr("action.writing_metadata", name=path.name))
     img = Image.open(path)
     exif = Image.Exif()
     if not strip_all:
@@ -399,7 +399,7 @@ def write_metadata_image(path: Path, fields: dict[int, str], strip_all: bool, ct
 
 def strip_metadata(path: Path, ctx: Ctx, reserved: set[Path]) -> Path:
     verify_writable(path)
-    ctx.status(f"Removing metadata from {path.name}")
+    ctx.status(i18n.tr("action.removing_metadata", name=path.name))
     ext = path.suffix.lower()
     if ext in (".jpg", ".jpeg", ".png", ".tiff", ".tif", ".webp", ".heic", ".heif"):
         img = Image.open(path)
@@ -437,7 +437,7 @@ def strip_metadata(path: Path, ctx: Ctx, reserved: set[Path]) -> Path:
 
 def crop_image(path: Path, box: tuple[int, int, int, int], ctx: Ctx, reserved: set[Path]) -> Path:
     verify_writable(path)
-    ctx.status(f"Cropping {path.name}")
+    ctx.status(i18n.tr("action.cropping", name=path.name))
     img = Image.open(path)
     img = ImageOps.exif_transpose(img)
     left, top, right, bottom = box
@@ -476,7 +476,7 @@ def redact_photo(
 ) -> Path:
     """boxes: (x, y, w, h, mode('solid'|'blur'), color) in pixel coordinates."""
     verify_writable(path)
-    ctx.status(f"Redacting {path.name}")
+    ctx.status(i18n.tr("action.redacting", name=path.name))
     img = ImageOps.exif_transpose(Image.open(path)).convert("RGBA")
     for x, y, w, h, mode, color in boxes:
         region = (max(0, x), max(0, y), max(0, x + w), max(0, y + h))
@@ -500,7 +500,7 @@ def add_background(
     ctx: Ctx, reserved: set[Path],
 ) -> Path:
     verify_writable(path)
-    ctx.status(f"Adding background to {path.name}")
+    ctx.status(i18n.tr("action.adding_background_to", name=path.name))
     img = Image.open(path).convert("RGBA")
     target_w = width or img.width
     target_h = height or img.height
@@ -518,8 +518,8 @@ def make_collage(
     paths: list[Path], options: dict, ctx: Ctx, reserved: set[Path],
 ) -> Path:
     if not paths:
-        raise EngineError("No images selected.")
-    ctx.status("Building collage")
+        raise EngineError(i18n.tr("err.no_images"))
+    ctx.status(i18n.tr("action.building_collage"))
     images = []
     for path in paths:
         verify_writable(path)
@@ -613,13 +613,13 @@ def audio_codec_args(path_or_ext: Path | str) -> list[str]:
     ext = name.rsplit(".", 1)[-1] if "." in name else name
     codec = CODEC_ARGS.get(ext) or AUDIO_CODEC_ARGS.get(ext)
     if codec is None:
-        raise EngineError(f"Unsupported audio container: {ext}")
+        raise EngineError(i18n.tr("err.audio_container", ext=ext))
     return list(codec)
 
 
 def _atempo_chain(factor: float) -> str:
     if factor <= 0:
-        raise EngineError("Speed must be greater than zero.")
+        raise EngineError(i18n.tr("err.speed_positive"))
     parts = []
     remaining = factor
     while remaining > 2.0:
@@ -634,7 +634,7 @@ def _atempo_chain(factor: float) -> str:
 
 def normalize_audio(path: Path, ctx: Ctx, reserved: set[Path]) -> Path:
     verify_writable(path)
-    ctx.status(f"Normalizing {path.name}")
+    ctx.status(i18n.tr("action.normalizing", name=path.name))
     info = probe(path)
     ext = path.suffix.lower()
     out_path = _unique(path.parent, f"{path.stem} Normalized", ext, reserved)
@@ -647,7 +647,7 @@ def normalize_audio(path: Path, ctx: Ctx, reserved: set[Path]) -> Path:
 
 def convert_channels(path: Path, mode: str, ctx: Ctx, reserved: set[Path]) -> Path:
     verify_writable(path)
-    ctx.status(f"Converting channels of {path.name}")
+    ctx.status(i18n.tr("action.converting_channels_of", name=path.name))
     info = probe(path)
     ext = path.suffix.lower()
     out_path = _unique(path.parent, f"{path.stem} {'Mono' if mode == 'mono' else 'Stereo'}", ext, reserved)
@@ -660,7 +660,7 @@ def convert_channels(path: Path, mode: str, ctx: Ctx, reserved: set[Path]) -> Pa
 
 def trim_audio(path: Path, start: float, end: float, ctx: Ctx, reserved: set[Path]) -> Path:
     verify_writable(path)
-    ctx.status(f"Trimming {path.name}")
+    ctx.status(i18n.tr("action.trimming", name=path.name))
     info = probe(path)
     duration = max(end - start, 0.05)
     ext = path.suffix.lower()
@@ -677,12 +677,12 @@ def bleep_audio(
 ) -> Path:
     verify_writable(path)
     if not ranges:
-        raise EngineError("Add at least one bleep range first.")
+        raise EngineError(i18n.tr("err.bleep_range"))
     info = probe(path)
     channels = info.audio().channels if info.audio() and info.audio().channels else 2
     sample_rate = info.audio().sample_rate if info.audio() and info.audio().sample_rate else 44100
     duration = info.duration or _max_end(ranges)
-    ctx.status(f"Bleeping {path.name}")
+    ctx.status(i18n.tr("action.bleeping", name=path.name))
     express = "+".join(f"between(t,{s:.4f},{e:.4f})" for s, e in ranges)
     layout = {1: "mono", 2: "stereo", 3: "2.1", 4: "quad", 5: "5.0",
               6: "5.1", 7: "6.1", 8: "7.1"}.get(channels, "stereo")
@@ -711,8 +711,10 @@ def make_visualizer(
     path: Path, orientation: str, background_image: Path | None, ctx: Ctx, reserved: set[Path],
 ) -> Path:
     verify_writable(path)
-    ctx.status(f"Building visualizer for {path.name}")
+    ctx.status(i18n.tr("action.building_visualizer", name=path.name))
     info = probe(path)
+    if not info.audio():
+        raise EngineError(i18n.tr("err.no_audio_track"))
     duration = info.duration or 1.0
     size = {"landscape": (1280, 720), "portrait": (720, 1280), "square": (1080, 1080)}.get(orientation, (1280, 720))
     out_path = _unique(path.parent, f"{path.stem} Visualizer", ".mp4", reserved)
@@ -747,7 +749,7 @@ def make_visualizer(
 
 def remove_audio(path: Path, ctx: Ctx, reserved: set[Path]) -> Path:
     verify_writable(path)
-    ctx.status(f"Removing audio from {path.name}")
+    ctx.status(i18n.tr("action.removing_audio_from", name=path.name))
     info = probe(path)
     out_path = _unique(path.parent, f"{path.stem} Muted", path.suffix, reserved)
     args = ["-i", str(path), "-an", "-c:v", "copy", str(out_path)]
@@ -758,7 +760,7 @@ def remove_audio(path: Path, ctx: Ctx, reserved: set[Path]) -> Path:
 
 def trim_video(path: Path, start: float, end: float, ctx: Ctx, reserved: set[Path]) -> Path:
     verify_writable(path)
-    ctx.status(f"Trimming {path.name}")
+    ctx.status(i18n.tr("action.trimming", name=path.name))
     info = probe(path)
     duration = max(end - start, 0.05)
     out_path = _unique(path.parent, f"{path.stem} Trimmed", path.suffix, reserved)
@@ -780,7 +782,7 @@ def crop_video(path: Path, box: tuple[int, int, int, int], ctx: Ctx, reserved: s
     info = probe(path)
     video = info.video()
     if not video:
-        raise EngineError("No video stream found.")
+        raise EngineError(i18n.tr("err.no_video_stream"))
     x, y, w, h = box
     if x == 0 and y == 0 and w >= video.width and h >= video.height:
         out_path = _unique(path.parent, f"{path.stem} Cropped", path.suffix, reserved)
@@ -808,7 +810,7 @@ def crop_video(path: Path, box: tuple[int, int, int, int], ctx: Ctx, reserved: s
 
 def change_speed(path: Path, factor: float, ctx: Ctx, reserved: set[Path]) -> Path:
     verify_writable(path)
-    ctx.status(f"Changing speed of {path.name}")
+    ctx.status(i18n.tr("action.changing_speed", name=path.name))
     info = probe(path)
     out_path = _unique(path.parent, f"{path.stem} {factor:g}x", path.suffix, reserved)
     filters = [f"setpts=PTS/{factor:.4f}"]
@@ -832,13 +834,13 @@ def take_snapshots(path: Path, timestamps: list[float], ctx: Ctx, reserved: set[
     outputs = []
     total = len(timestamps)
     for index, timestamp in enumerate(timestamps):
-        ctx.status(f"Capturing frame at {timestamp:.2f}s")
+        ctx.status(i18n.tr("action.capturing_frame", time=timestamp))
         suffix = f" Frame {int(round(timestamp * 1000))}.png"
         out_path = _unique(path.parent, f"{path.stem}{suffix}", "", reserved)
         args = ["-ss", f"{timestamp:.3f}", "-i", str(path), "-frames:v", "1", "-y", str(out_path)]
         code = run_ffmpeg(args, 0, None, ctx.cancel)
         if code != 0 or not out_path.exists():
-            raise EngineError(f"Could not capture a frame at {timestamp:.2f}s.")
+            raise EngineError(i18n.tr("err.frame_capture", time=timestamp))
         outputs.append(out_path)
         ctx.progress((index + 1) / total)
     return outputs
@@ -848,7 +850,7 @@ def split_video(path: Path, parts: int, ctx: Ctx, reserved: set[Path]) -> Path:
     verify_writable(path)
     info = probe(path)
     if parts < 2:
-        raise EngineError("Choose at least two sections.")
+        raise EngineError(i18n.tr("err.split_sections"))
     duration = info.duration
     segment_time = duration / parts
     folder_name = naming.folder_name(path, "Split")
@@ -859,7 +861,7 @@ def split_video(path: Path, parts: int, ctx: Ctx, reserved: set[Path]) -> Path:
         index += 1
     tmp = Path(str(folder) + ".tmp")
     tmp.mkdir(parents=True, exist_ok=True)
-    ctx.status(f"Splitting {path.name} into {parts} sections")
+    ctx.status(i18n.tr("action.splitting_into", name=path.name, parts=parts))
     args = ["-i", str(path), "-c:v", "libx264", "-crf", "20", "-preset", "veryfast",
             "-pix_fmt", "yuv420p", "-force_key_frames", f"expr:gte(t,n_forced*{segment_time:.4f})",
             "-f", "segment", "-segment_time", f"{segment_time:.4f}",
@@ -870,20 +872,20 @@ def split_video(path: Path, parts: int, ctx: Ctx, reserved: set[Path]) -> Path:
     code = run_ffmpeg(args, duration, ctx.progress, ctx.cancel)
     if code != 0:
         shutil.rmtree(tmp, ignore_errors=True)
-        raise EngineError("Could not split this video.")
+        raise EngineError(i18n.tr("err.split_failed"))
     os.replace(tmp, folder)
     return folder
 
 
 def join_videos(paths: list[Path], ctx: Ctx, reserved: set[Path]) -> Path:
     if len(paths) < 2:
-        raise EngineError("Select at least two videos to join.")
+        raise EngineError(i18n.tr("err.join_two"))
     for path in paths:
         verify_writable(path)
     infos = [probe(path) for path in paths]
     first_video = infos[0].video()
     if not first_video:
-        raise EngineError("The first video has no video stream.")
+        raise EngineError(i18n.tr("err.first_no_video"))
     width, height = first_video.width, first_video.height
     if max(width, height) > 1920:
         scale = 1920 / max(width, height)
@@ -926,7 +928,7 @@ def redact_video(
     """boxes: dicts with x, y, w, h (pixels) and start, end (seconds)."""
     verify_writable(path)
     if not boxes:
-        raise EngineError("Add at least one redaction box first.")
+        raise EngineError(i18n.tr("err.redact_box"))
     info = probe(path)
     duration = info.duration
     valid: list[tuple[int, int, int, int, float, float]] = []
@@ -940,8 +942,8 @@ def redact_video(
             continue
         valid.append((x, y, w, h, start, end))
     if not valid:
-        raise EngineError("No valid redaction boxes.")
-    ctx.status(f"Redacting {path.name}")
+        raise EngineError(i18n.tr("err.redact_invalid"))
+    ctx.status(i18n.tr("action.redacting", name=path.name))
     ff_color = "black" if color.startswith("#000000") else f"0x{color.lstrip('#')}"
     chains = []
     current = "[0:v]"
@@ -987,7 +989,7 @@ def split_pdf(path: Path, ctx: Ctx, reserved: set[Path]) -> Path:
         folder = path.parent / f"{naming.folder_name(path, 'Pages')} {index}"
         index += 1
     folder.mkdir()
-    ctx.status(f"Splitting {path.name} into {total} pages")
+    ctx.status(i18n.tr("action.splitting_into_pages", name=path.name, total=total))
     for number, page in enumerate(reader.pages):
         writer = PdfWriter()
         writer.add_page(page)
@@ -1002,7 +1004,7 @@ def merge_pdfs(paths: list[Path], ctx: Ctx, reserved: set[Path]) -> Path:
     from pypdf import PdfReader, PdfWriter
 
     if not paths:
-        raise EngineError("Select at least one PDF.")
+        raise EngineError(i18n.tr("err.pdf_select"))
     writer = PdfWriter()
     total = sum(len(PdfReader(str(p)).pages) for p in paths) or 1
     done = 0
@@ -1023,14 +1025,14 @@ def compress_pdf(path: Path, ctx: Ctx, reserved: set[Path]) -> Path:
     from pypdf import PdfReader, PdfWriter
 
     verify_writable(path)
-    ctx.status(f"Compressing {path.name}")
+    ctx.status(i18n.tr("action.compressing", name=path.name))
     original_size = path.stat().st_size
     reader = PdfReader(str(path))
     total = max(1, len(reader.pages))
     writer = PdfWriter()
     for number, page in enumerate(reader.pages):
         if ctx.cancelled():
-            raise EngineError("Cancelled.")
+            raise EngineError(i18n.tr("err.cancelled"))
         try:
             page.compress_content_streams()
         except Exception:
@@ -1084,7 +1086,7 @@ def read_qr_codes(paths: list[Path], ctx: Ctx) -> list[tuple[str, str | None, st
     for path in paths:
         if ctx.cancelled():
             break
-        ctx.status(f"Scanning {path.name}")
+        ctx.status(i18n.tr("action.scanning", name=path.name))
         suffix = path.suffix.lower()
         try:
             if suffix == ".pdf":
