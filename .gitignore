@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+build/
+dist/
+*.egg-info/
+.pytest_cache/
+
+# Windows
+Thumbs.db
+desktop.ini
+
+# Project-specific
+assets/*_backup.*
+*.log

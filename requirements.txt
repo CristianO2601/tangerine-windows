@@ -1,0 +1,41 @@
+# Tangerine for Windows - Python dependencies
+#
+# Install with:
+#     pip install -r requirements.txt
+
+# UI: Qt Widgets, QtMultimedia, QtSvg
+PySide6>=6.11.0
+# Image processing
+Pillow>=12.0
+pillow-heif
+# PDF reading / writing / rendering
+pypdf
+pypdfium2
+# Word (.docx) export and document readers (docx/xlsx/pptx)
+python-docx
+openpyxl>=3.1
+python-pptx>=1.0
+striprtf>=0.0.26
+odfpy>=1.4
+# Markdown rendering (md -> html/txt/pdf)
+Markdown>=3.5
+# QR codes and face detection
+opencv-python-headless<5
+# Selectable-text PDF generation from TXT
+reportlab
+# Test-only helper for generating QR fixtures
+segno
+
+# ---------------------------------------------------------------------------
+# External tools (installed separately, not through pip)
+#
+# - FFmpeg + ffprobe (required for audio/video/GIF and media metadata).
+#   Detected automatically in the app's own tools\ folder, winget installs
+#   (Gyan.FFmpeg full build recommended), C:\ffmpeg\bin, and PATH.
+# - WinRAR (optional, .rar only): Rar.exe / UnRAR.exe in C:\Program Files\WinRAR.
+#   Without it, zip/tar/gz still work.
+#
+# Notes
+# - Tested on Python 3.14 (3.11+ recommended).
+# - On Windows, run as a tray app with `pythonw main.py`
+#   (use `python main.py` to see the console while debugging).
