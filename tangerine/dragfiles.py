@@ -70,12 +70,23 @@ def _has_format(data_object, cf_format: int) -> bool:
     return query(data_object, byref(fmt)) == 0
 
 
-def current_drag_files() -> list[str] | None:
+def current_drag_files(require_drag_loop: bool = True) -> list[str] | None:
+    """Return the files published on the OLE clipboard.
+
+    ``require_drag_loop`` keeps the strict check that an actual shell drag
+    session is in progress (the InShellDragLoop clipboard format). The
+    monitor relaxes it only when the foreground window is an allowlisted
+    Explorer surface during a held drag, where a plain CF_HDROP read is a
+    safe fallback (some Windows builds do not publish the loop format).
+    """
+
     data_object = c_void_p()
     try:
         if ole32.OleGetClipboard(byref(data_object)) != 0 or not data_object.value:
             return None
-        if not _has_format(data_object.value, _IN_SHELL_DRAG_LOOP):
+        if require_drag_loop and not _has_format(
+            data_object.value, _IN_SHELL_DRAG_LOOP
+        ):
             return None
         get_data = _vfn(
             data_object.value,

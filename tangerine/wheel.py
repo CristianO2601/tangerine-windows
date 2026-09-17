@@ -364,6 +364,14 @@ class TangerineWheel(QWidget):
 
         self._animate_depart(finished)
 
+    def cancel_dismiss(self) -> None:
+        """Abort a farewell in flight so the wheel stays for this gesture."""
+        self._depart_token += 1
+        self._depart = 0.0
+        if self._depart_anim is not None:
+            self._depart_anim.stop()
+        self.update()
+
     # -- interaction ---------------------------------------------------
 
     def hit_test(self, local: QPointF) -> int:
@@ -673,14 +681,21 @@ class TangerineWheel(QWidget):
 
     def paintEvent(self, event) -> None:
         count = len(self._items)
-        if count == 0:
-            return
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         painter.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
         center = QPointF(self.width() / 2.0, self.height() / 2.0)
         tokens = theme.hud(self._dark)
         self._paint_halo(painter, center, tokens)
+        if count == 0:
+            # An empty wheel must still paint an opaque surface. The window is
+            # layered (WA_TranslucentBackground) and Windows derives both
+            # mouse hit-testing and OLE drop targeting from the painted
+            # pixels; a fully transparent window is click-through, so it would
+            # never receive ``dragEnter`` and could never fill its petals.
+            self._paint_hub(painter, center, tokens)
+            painter.end()
+            return
         step = 360.0 / count
         for index, item in enumerate(self._items):
             self._paint_petal(painter, center, index, item, step, tokens)

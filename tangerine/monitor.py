@@ -48,6 +48,7 @@ ACTIVE_INTERVAL_MS = 16
 MOVEMENT_THRESHOLD = 8.0
 DROP_COOLDOWN_S = 0.6
 LONG_PRESS_S = 0.7
+BUTTON_RELEASE_SAMPLES = 4  # consecutive "up" reads before a release counts
 
 
 def _is_down(vk: int) -> bool:
@@ -70,6 +71,7 @@ class DragMonitor(QObject):
         self._timer.timeout.connect(self._tick)
         self._timer.start()
         self._button_down = False
+        self._button_up_ticks = 0
         self._anchor: QPoint | None = None
         self._visible = False
         self._cooldown_until = 0.0
@@ -131,6 +133,12 @@ class DragMonitor(QObject):
             return self._last_files
         self._last_clip_check = now
         self._last_files = dragfiles.current_drag_files()
+        if self._last_files is None and self._foreground_allows():
+            # Some Windows builds do not publish the InShellDragLoop format
+            # during a real Explorer drag; with the button held and an
+            # allowlisted foreground, a plain CF_HDROP read is the drag
+            # payload (same behaviour the app shipped with before the gate).
+            self._last_files = dragfiles.current_drag_files(require_drag_loop=False)
         return self._last_files
 
     def _foreground_allows(self) -> bool:
@@ -146,7 +154,22 @@ class DragMonitor(QObject):
         return buffer.value in FOREGROUND_ALLOWLIST
 
     def _tick(self) -> None:
-        button = _is_down(VK_LBUTTON)
+        down = _is_down(VK_LBUTTON)
+        if down:
+            self._button_up_ticks = 0
+        else:
+            self._button_up_ticks += 1
+        if (
+            not down
+            and self._button_down
+            and self._button_up_ticks < BUTTON_RELEASE_SAMPLES
+        ):
+            # Windows 11 reports the left button as up for isolated samples
+            # while Explorer services the OLE drag loop; swallowing those
+            # keeps the wheel on screen instead of hiding it and re-blooming
+            # with the petals emptied a tick later.
+            return
+        button = down
         self._poll_keyboard(button)
         if button and not self._button_down:
             self._button_down = True
@@ -161,6 +184,7 @@ class DragMonitor(QObject):
         if not button:
             if self._button_down:
                 self._button_down = False
+                self._button_up_ticks = 0
                 self._anchor = None
                 self._mode = None
                 self._long_press_fired = False
@@ -204,8 +228,13 @@ class DragMonitor(QObject):
         if mode is None:
             return
         files = self._drag_files()
-        if files is None and not self._foreground_allows():
-            return
+        # The OLE drag payload is not readable on every Windows build while
+        # a drag is in flight (observed on this Windows 11: neither the
+        # InShellDragLoop format nor a plain CF_HDROP read returns anything),
+        # and the foreground window is not always an allowlisted Explorer
+        # surface mid-drag. The wheel therefore shows as soon as the held
+        # gesture matches; its dragEnter handler fills the petals from the
+        # drop payload as the pointer enters the wheel window.
         self._mode = mode
         self._visible = True
         self.wheelShown.emit(cursor, files, mode)

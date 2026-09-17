@@ -153,7 +153,15 @@ class Controller(QObject):
         self.wheel.set_mode(mode)
         if files:
             self.wheel.set_files(files)
-        self.wheel.set_items(self._items_for(files, mode))
+            self.wheel.set_items(self._items_for(files, mode))
+        elif self.wheel.isVisible():
+            # Re-show during the same gesture without a readable payload
+            # (Windows does not always publish the drag clipboard): keep the
+            # petals dragEnter already filled and abort the farewell in
+            # flight instead of wiping them.
+            self.wheel.cancel_dismiss()
+        else:
+            self.wheel.set_items(self._items_for(files, mode))
         self.wheel.center_at(pos)
         self.wheel.show()
 

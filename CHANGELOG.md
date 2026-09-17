@@ -1,5 +1,31 @@
 # Changelog
 
+## 1.7.1 — 2026-09-17
+
+Corrección del arrastre real desde el Explorador: la rueda ya no parpadea,
+pierde sus pétalos ni queda como no-op silencioso a mitad del gesto en
+Windows 11.
+
+### Correcciones
+- **Arrastre estable:** Windows 11 informa el botón izquierdo como suelto en
+  muestras aisladas mientras dura el arrastre OLE; el monitor lo tomaba por
+  un clic nuevo, ocultaba la rueda y la volvía a mostrar con los pétalos
+  vacíos, de modo que soltar en ese instante no hacía nada. Ahora una
+  liberación solo cuenta tras 4 muestras consecutivas "suelto" (~64 ms) y las
+  muestras ambiguas no avanzan el gesto (`tangerine/monitor.py`).
+- **Pétalos a salvo:** si la rueda se vuelve a mostrar durante el mismo gesto
+  sin una carga legible (Windows no publica siempre el portapapeles del
+  arrastre), conserva los pétalos que `dragEnter` ya rellenó y cancela la
+  despedida en curso (`TangerineWheel.cancel_dismiss`) en vez de vaciarlos.
+- **Lectura de la carga:** con el botón pulsado y el Explorador en primer
+  plano, una lectura directa de `CF_HDROP` cubre los equipos donde el formato
+  `InShellDragLoop` no se publica.
+
+### Verificación
+- **126 pruebas** pytest, con 6 nuevas de regresión: ráfagas "suelto" y
+  liberación real del monitor, ventana ambigua sin avance, `dragEnter`→`drop`
+  de la rueda (pétalos y acción) y cancelación de la despedida.
+
 ## 1.7.0 — 2026-09-17
 
 Paridad visual con la app oficial: el HUD pasa a superficies translúcidas de
