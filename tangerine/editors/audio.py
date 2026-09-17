@@ -16,14 +16,13 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QMessageBox,
-    QPushButton,
     QRadioButton,
     QWidget,
 )
 
 from .. import i18n, progress, tools
 from ..media import CREATE_NO_WINDOW, ffmpeg_path
-from .base import ToolDialog
+from .base import ToolDialog, align_form, chip_button
 from .ui.waveform import BleepWaveform, PlayerMixin, TrimWaveform
 
 
@@ -108,6 +107,7 @@ class VisualizerDialog(ToolDialog):
 
         form = QFormLayout()
         form.setSpacing(10)
+        align_form(form)
         self.orientation = QComboBox()
         self.orientation.addItems([i18n.tr("opt.landscape"), i18n.tr("opt.portrait"),
                                    i18n.tr("opt.square")])
@@ -117,9 +117,9 @@ class VisualizerDialog(ToolDialog):
         row = QHBoxLayout()
         self.bg_label = QLabel(i18n.tr("dlg.visualizer.bg_none"))
         self.bg_label.setProperty("dim", True)
-        choose = QPushButton(i18n.tr("btn.choose_image"))
+        choose = chip_button(i18n.tr("btn.choose_image"))
         choose.clicked.connect(self._choose_background)
-        clear = QPushButton(i18n.tr("btn.clear"))
+        clear = chip_button(i18n.tr("btn.clear"))
         clear.clicked.connect(self._clear_background)
         row.addWidget(self.bg_label, 1)
         row.addWidget(choose)
@@ -175,6 +175,7 @@ class TrimAudioDialog(ToolDialog, PlayerMixin):
 
         form = QFormLayout()
         form.setSpacing(10)
+        align_form(form)
         self.start_spin = QDoubleSpinBox()
         self.start_spin.setRange(0.0, max(self._duration, 0.01))
         self.start_spin.setDecimals(3)
@@ -191,11 +192,11 @@ class TrimAudioDialog(ToolDialog, PlayerMixin):
         self.end_spin.valueChanged.connect(self._spins_changed)
 
         row = QHBoxLayout()
-        play = QPushButton(i18n.tr("btn.play_selection"))
+        play = chip_button(i18n.tr("btn.play_selection"))
         play.clicked.connect(self._play_selection)
-        stop = QPushButton(i18n.tr("btn.stop"))
+        stop = chip_button(i18n.tr("btn.stop"))
         stop.clicked.connect(self._stop_playback)
-        auto = QPushButton(i18n.tr("btn.auto_trim"))
+        auto = chip_button(i18n.tr("btn.auto_trim"))
         auto.clicked.connect(self._auto_trim)
         row.addWidget(play)
         row.addWidget(stop)
@@ -291,6 +292,7 @@ class BleepDialog(ToolDialog, PlayerMixin):
 
         form = QFormLayout()
         form.setSpacing(10)
+        align_form(form)
         self.start_spin = QDoubleSpinBox()
         self.start_spin.setRange(0.0, max(self._duration, 0.01))
         self.start_spin.setDecimals(3)
@@ -304,11 +306,11 @@ class BleepDialog(ToolDialog, PlayerMixin):
         self._body.addLayout(form)
 
         row = QHBoxLayout()
-        add = QPushButton(i18n.tr("btn.add_range"))
+        add = chip_button(i18n.tr("btn.add_range"))
         add.clicked.connect(self._add_range)
-        entire = QPushButton(i18n.tr("btn.bleep_entire"))
+        entire = chip_button(i18n.tr("btn.bleep_entire"))
         entire.clicked.connect(self._bleep_entire)
-        remove = QPushButton(i18n.tr("btn.delete_range"))
+        remove = chip_button(i18n.tr("btn.delete_range"))
         remove.clicked.connect(self._delete_range)
         row.addWidget(add)
         row.addWidget(remove)
@@ -317,9 +319,9 @@ class BleepDialog(ToolDialog, PlayerMixin):
         self._body.addLayout(row)
 
         playback = QHBoxLayout()
-        play = QPushButton(i18n.tr("btn.play_original"))
+        play = chip_button(i18n.tr("btn.play_original"))
         play.clicked.connect(self._play)
-        stop = QPushButton(i18n.tr("btn.stop"))
+        stop = chip_button(i18n.tr("btn.stop"))
         stop.clicked.connect(self._stop_playback)
         playback.addWidget(play)
         playback.addWidget(stop)

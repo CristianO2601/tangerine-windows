@@ -13,7 +13,7 @@ from PySide6.QtWidgets import QApplication, QMenu, QMessageBox, QSystemTrayIcon
 
 from . import actions, catalog, i18n, paths, settings, theme
 from .monitor import DragMonitor
-from .wheel import FanItem, TangerineWheel, icon_for
+from .wheel import FanItem, TangerineWheel
 
 log = logging.getLogger("tangerine")
 
@@ -87,6 +87,7 @@ class Controller(QObject):
         self.monitor.wheelMoved.connect(self._move_wheel)
         self.monitor.wheelHidden.connect(self._hide_wheel)
         self.monitor.wheelRefreshed.connect(self._refresh_wheel)
+        self.monitor.keyboardTriggered.connect(self._keyboard_wheel)
 
         self.tray = QSystemTrayIcon(QIcon(str(paths.icon_path())), self)
         self.tray.setToolTip(i18n.tr("tray.tooltip"))
@@ -121,9 +122,6 @@ class Controller(QObject):
             files = self.wheel.file_paths()
             if files:
                 self._refresh_wheel(self._mode)
-            else:
-                main = i18n.tr("wheel.tools" if self._mode == "tools" else "wheel.convert")
-                self.wheel.set_prompt(main, i18n.tr("wheel.drop_file"))
             self.wheel.update()
         except Exception:
             log.exception("Could not refresh the UI after a language change")
@@ -131,21 +129,18 @@ class Controller(QObject):
     # -- wheel -----------------------------------------------------------------
     def _items_for(self, files, mode):
         file_list = list(files) if files else []
-        from pathlib import Path as _P
-
-        sources = [_P(f) for f in file_list]
+        sources = [Path(f) for f in file_list]
         if mode == "tools":
             items = []
             for tool in catalog.tools_for(sources):
                 label = i18n.tr("tool." + tool.id)
-                items.append(FanItem(tool.id, label, icon_for(tool.id), "tool"))
+                items.append(FanItem(tool.id, label, kind="tool"))
                 self._labels[tool.id] = label
             return items
         items = []
         for conversion in catalog.conversions_for(sources):
             label = i18n.tr("conv." + conversion.target_ext)
-            items.append(FanItem(conversion.target_ext, label,
-                                 icon_for(conversion.target_ext), "conversion"))
+            items.append(FanItem(conversion.target_ext, label, kind="conversion"))
             self._labels[conversion.target_ext] = label
         return items
 
@@ -154,12 +149,18 @@ class Controller(QObject):
 
     def _show_wheel(self, pos, files, mode):
         self._mode = mode
+        self.wheel.set_keyboard_mode(False)
         self.wheel.set_mode(mode)
+        if files:
+            self.wheel.set_files(files)
         self.wheel.set_items(self._items_for(files, mode))
-        main = i18n.tr("wheel.tools" if mode == "tools" else "wheel.convert")
-        self.wheel.set_prompt(main, self._subtitle(files))
         self.wheel.center_at(pos)
         self.wheel.show()
+
+    def _keyboard_wheel(self, pos, files, mode):
+        """Shift+Enter on an Explorer selection (plan 1.5): keyboard wheel."""
+        self._show_wheel(pos, files, mode)
+        self.wheel.set_keyboard_mode(True)
 
     def _refresh_wheel(self, mode):
         self._mode = mode
@@ -167,24 +168,14 @@ class Controller(QObject):
         files = self.wheel.file_paths()
         if not files:
             return
-        self.wheel.set_items(self._items_for(files, mode))
-        main = i18n.tr("wheel.tools" if mode == "tools" else "wheel.convert")
-        self.wheel.set_prompt(main, self._subtitle(files))
-
-    @staticmethod
-    def _subtitle(files):
-        if not files:
-            return i18n.tr("wheel.drop_file")
-        if len(files) == 1:
-            return Path(files[0]).name
-        return i18n.tr("wheel.files_count", n=len(files))
+        self.wheel.set_items(self._items_for(files, mode), animate=True)
 
     def _move_wheel(self, pos):
         self.wheel.update_cursor(pos)
 
     def _hide_wheel(self):
-        self.wheel.hide()
-        self.wheel.reset()
+        self.wheel.set_keyboard_mode(False)
+        self.wheel.dismiss()
 
     def _activated(self, files, key):
         self.monitor.notify_dropped()
@@ -298,7 +289,7 @@ def _run():
     app.setOrganizationName("Tangerine")
     app.setWindowIcon(QIcon(str(paths.icon_path())))
     app.setQuitOnLastWindowClosed(False)
-    app.setStyleSheet(theme.stylesheet(theme.is_dark()))
+    theme.apply_app_theme()
 
     if not QSystemTrayIcon.isSystemTrayAvailable():
         log.error("No system tray available")

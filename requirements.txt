@@ -25,6 +25,8 @@ opencv-python-headless<5
 reportlab
 # Test-only helper for generating QR fixtures
 segno
+# Explorer selection for the Shift+Enter keyboard trigger (Shell.Application COM)
+comtypes>=1.4
 
 # ---------------------------------------------------------------------------
 # External tools (installed separately, not through pip)

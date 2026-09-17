@@ -10,11 +10,32 @@ import shutil
 import zipfile
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFilter, ImageOps
+from PIL import (
+    Image,
+    ImageChops,
+    ImageDraw,
+    ImageEnhance,
+    ImageFilter,
+    ImageOps,
+    ImageColor,
+    TiffImagePlugin,
+)
 
 from . import i18n, naming
 from .engines import CODEC_ARGS, Ctx, EngineError, _finish_ffmpeg, load_image, verify_writable, _flatten
 from .media import probe, probe_duration_seconds, run_ffmpeg
+
+#: Extensions handled by Pillow for the metadata tools.
+IMAGE_META_EXTS = (
+    ".jpg", ".jpeg", ".png", ".tiff", ".tif", ".webp", ".heic", ".heif",
+    ".avif", ".bmp",
+)
+
+#: GPS location is stored in its own EXIF sub-IFD.
+GPS_IFD = 0x8825
+
+#: Mosaic block size for pixelated redaction.
+PIXELATE_BLOCK = 12
 
 
 def _unique(folder: Path, stem: str, suffix: str, reserved: set[Path]) -> Path:
@@ -282,7 +303,7 @@ EXIF_SUB_TAGS = {36867, 36868, 40094, 42036}
 def read_metadata(path: Path) -> list[tuple[str, str]]:
     ext = path.suffix.lower()
     rows: list[tuple[str, str]] = []
-    if ext in (".jpg", ".jpeg", ".tiff", ".tif", ".png", ".webp", ".heic", ".heif"):
+    if ext in IMAGE_META_EXTS:
         try:
             img = Image.open(path)
             exif = img.getexif()
@@ -301,6 +322,12 @@ def read_metadata(path: Path) -> list[tuple[str, str]]:
                 rows.append((name, str(value)))
         except Exception:
             pass
+        location = read_location(path)
+        if location:
+            rows.append((i18n.tr("meta.latitude"), f"{location['latitude']:.6f}"))
+            rows.append((i18n.tr("meta.longitude"), f"{location['longitude']:.6f}"))
+            if location.get("altitude") is not None:
+                rows.append((i18n.tr("meta.altitude"), f"{location['altitude']:.2f} m"))
     else:
         info = probe(path)
         if info.duration:
@@ -334,7 +361,134 @@ def read_metadata(path: Path) -> list[tuple[str, str]]:
     return rows
 
 
-def write_metadata_image(path: Path, fields: dict[int, str], strip_all: bool, ctx: Ctx, reserved: set[Path]) -> Path:
+def _gps_decimal(values, reference) -> float | None:
+    try:
+        parts = [float(part) for part in tuple(values)]
+    except Exception:
+        return None
+    if len(parts) < 2:
+        return None
+    decimal = parts[0] + parts[1] / 60.0
+    if len(parts) > 2:
+        decimal += parts[2] / 3600.0
+    if isinstance(reference, bytes):
+        reference = reference.decode("ascii", errors="replace")
+    reference = str(reference or "").strip().upper()
+    if reference.startswith("S") or reference.startswith("W"):
+        decimal = -decimal
+    return decimal
+
+
+def _gps_altitude_ref(value) -> int:
+    if isinstance(value, bytes):
+        return value[0] if value else 0
+    try:
+        return int(value)
+    except Exception:
+        return 0
+
+
+def read_location(path: Path) -> dict | None:
+    """Decimal latitude/longitude/altitude from the EXIF GPS IFD, if present."""
+    try:
+        gps = Image.open(path).getexif().get_ifd(GPS_IFD)
+    except Exception:
+        return None
+    if not gps:
+        return None
+    latitude = _gps_decimal(gps.get(2), gps.get(1))
+    longitude = _gps_decimal(gps.get(4), gps.get(3))
+    if latitude is None or longitude is None:
+        return None
+    altitude = None
+    if gps.get(6) is not None:
+        try:
+            altitude = float(gps[6])
+            if _gps_altitude_ref(gps.get(5)) == 1:
+                altitude = -altitude
+        except Exception:
+            altitude = None
+    return {"latitude": latitude, "longitude": longitude, "altitude": altitude}
+
+
+def _gps_rational(value: float) -> tuple:
+    degrees = int(value)
+    minutes_full = (value - degrees) * 60.0
+    minutes = int(minutes_full)
+    seconds = (minutes_full - minutes) * 60.0
+    return (
+        TiffImagePlugin.IFDRational(degrees, 1),
+        TiffImagePlugin.IFDRational(minutes, 1),
+        TiffImagePlugin.IFDRational(round(seconds * 10000), 10000),
+    )
+
+
+def _write_gps(exif: Image.Exif, location: dict) -> None:
+    latitude = location.get("latitude")
+    longitude = location.get("longitude")
+    if latitude is None or longitude is None:
+        return
+    latitude = float(latitude)
+    longitude = float(longitude)
+    gps = exif.get_ifd(GPS_IFD)
+    gps[1] = "N" if latitude >= 0 else "S"
+    gps[2] = _gps_rational(abs(latitude))
+    gps[3] = "E" if longitude >= 0 else "W"
+    gps[4] = _gps_rational(abs(longitude))
+    altitude = location.get("altitude")
+    if altitude is not None and str(altitude).strip() != "":
+        altitude = float(altitude)
+        gps[5] = 0 if altitude >= 0 else 1
+        gps[6] = TiffImagePlugin.IFDRational(round(abs(altitude) * 1000), 1000)
+
+
+def _exif_payload(exif: Image.Exif) -> bytes | None:
+    try:
+        populated = bool(
+            len(exif) or len(exif.get_ifd(0x8769)) or len(exif.get_ifd(GPS_IFD)))
+    except Exception:
+        populated = True
+    if not populated:
+        return None
+    try:
+        return exif.tobytes()
+    except Exception:
+        return None
+
+
+def _save_image_with_exif(img: Image.Image, path: Path, out_path: Path, exif) -> None:
+    ext = path.suffix.lower()
+    fmt = img.format or None
+    save_kwargs: dict = {}
+    if ext in (".jpg", ".jpeg"):
+        fmt = "JPEG"
+        save_kwargs = {"quality": 95, "optimize": True}
+        img = _flatten(img) if img.mode not in ("RGB", "L") else img
+    elif ext == ".png":
+        fmt = "PNG"
+    elif ext in (".tiff", ".tif"):
+        fmt = "TIFF"
+    elif ext == ".webp":
+        fmt = "WEBP"
+        save_kwargs = {"quality": 95}
+    elif ext in (".heic", ".heif"):
+        fmt = "HEIF"
+        save_kwargs = {"quality": 95}
+    elif ext == ".avif":
+        fmt = "AVIF"
+        save_kwargs = {"quality": 95}
+    elif ext == ".bmp":
+        fmt = "BMP"
+    payload = _exif_payload(exif) if exif is not None else None
+    if payload and fmt in ("JPEG", "PNG", "TIFF", "WEBP", "HEIF", "AVIF"):
+        save_kwargs["exif"] = payload
+    img.save(out_path, fmt, **save_kwargs)
+
+
+def write_metadata_image(
+    path: Path, fields: dict[int, str], strip_all: bool, ctx: Ctx, reserved: set[Path],
+    location: dict | None = None,
+) -> Path:
     verify_writable(path)
     ctx.status(i18n.tr("action.writing_metadata", name=path.name))
     img = Image.open(path)
@@ -364,6 +518,14 @@ def write_metadata_image(path: Path, fields: dict[int, str], strip_all: bool, ct
                         pass
             except Exception:
                 pass
+            try:
+                for tag, value in source.get_ifd(GPS_IFD).items():
+                    try:
+                        exif.get_ifd(GPS_IFD)[tag] = value
+                    except Exception:
+                        pass
+            except Exception:
+                pass
         except Exception:
             pass
     for tag, value in fields.items():
@@ -372,27 +534,43 @@ def write_metadata_image(path: Path, fields: dict[int, str], strip_all: bool, ct
                 exif.get_ifd(0x8769)[tag] = value
             else:
                 exif[tag] = value
+    if location:
+        try:
+            _write_gps(exif, location)
+        except Exception:
+            pass
     out_path = _unique(path.parent, f"{path.stem} Metadata", path.suffix, reserved)
-    fmt = img.format or None
-    save_kwargs: dict = {}
-    if path.suffix.lower() in (".jpg", ".jpeg"):
-        fmt = "JPEG"
-        save_kwargs = {"quality": 95, "optimize": True}
-        img = _flatten(img) if img.mode not in ("RGB", "L") else img
-    elif path.suffix.lower() == ".png":
-        fmt = "PNG"
-    elif path.suffix.lower() in (".tiff", ".tif"):
-        fmt = "TIFF"
-    elif path.suffix.lower() == ".webp":
-        fmt = "WEBP"
-        save_kwargs = {"quality": 95}
-    elif path.suffix.lower() in (".heic", ".heif"):
-        fmt = "HEIF"
-        save_kwargs = {"quality": 95}
-    payload = exif.tobytes() if len(exif) or exif.get_ifd(0x8769) else None
-    if payload and fmt in ("JPEG", "PNG", "TIFF", "WEBP", "HEIF"):
-        save_kwargs["exif"] = payload
-    img.save(out_path, fmt, **save_kwargs)
+    _save_image_with_exif(img, path, out_path, exif)
+    ctx.progress(1.0)
+    return out_path
+
+
+def remove_location(path: Path, ctx: Ctx, reserved: set[Path]) -> Path:
+    """Drop only the EXIF GPS block, keeping every other tag."""
+    verify_writable(path)
+    if path.suffix.lower() not in IMAGE_META_EXTS:
+        raise EngineError(i18n.tr("err.gps_image_only"))
+    ctx.status(i18n.tr("action.removing_location", name=path.name))
+    img = Image.open(path)
+    source = img.getexif()
+    exif = Image.Exif()
+    for tag in source:
+        if tag in (0x8769, GPS_IFD):
+            continue
+        try:
+            exif[tag] = source[tag]
+        except Exception:
+            pass
+    try:
+        for tag, value in source.get_ifd(0x8769).items():
+            try:
+                exif.get_ifd(0x8769)[tag] = value
+            except Exception:
+                pass
+    except Exception:
+        pass
+    out_path = _unique(path.parent, f"{path.stem} No Location", path.suffix, reserved)
+    _save_image_with_exif(img, path, out_path, exif)
     ctx.progress(1.0)
     return out_path
 
@@ -401,7 +579,7 @@ def strip_metadata(path: Path, ctx: Ctx, reserved: set[Path]) -> Path:
     verify_writable(path)
     ctx.status(i18n.tr("action.removing_metadata", name=path.name))
     ext = path.suffix.lower()
-    if ext in (".jpg", ".jpeg", ".png", ".tiff", ".tif", ".webp", ".heic", ".heif"):
+    if ext in IMAGE_META_EXTS:
         img = Image.open(path)
         img = ImageOps.exif_transpose(img)
         out_path = _unique(path.parent, f"{path.stem} Clean", ext, reserved)
@@ -420,6 +598,11 @@ def strip_metadata(path: Path, ctx: Ctx, reserved: set[Path]) -> Path:
         elif ext in (".heic", ".heif"):
             fmt = "HEIF"
             kwargs = {"quality": 95}
+        elif ext == ".avif":
+            fmt = "AVIF"
+            kwargs = {"quality": 95}
+        else:
+            fmt = "BMP"
         img.save(out_path, fmt, **kwargs)
         ctx.progress(1.0)
         return out_path
@@ -456,6 +639,7 @@ def _pillow_format(suffix: str) -> str:
     mapping = {
         ".jpg": "JPEG", ".jpeg": "JPEG", ".png": "PNG", ".webp": "WEBP",
         ".tiff": "TIFF", ".tif": "TIFF", ".heic": "HEIF", ".heif": "HEIF",
+        ".avif": "AVIF", ".bmp": "BMP",
     }
     return mapping.get(suffix.lower(), "PNG")
 
@@ -463,9 +647,7 @@ def _pillow_format(suffix: str) -> str:
 def _pillow_kwargs(suffix: str) -> dict:
     if suffix.lower() in (".jpg", ".jpeg"):
         return {"quality": 95, "optimize": True}
-    if suffix.lower() == ".webp":
-        return {"quality": 95}
-    if suffix.lower() in (".heic", ".heif"):
+    if suffix.lower() in (".webp", ".heic", ".heif", ".avif"):
         return {"quality": 95}
     return {}
 
@@ -474,7 +656,7 @@ def redact_photo(
     path: Path, boxes: list[tuple[int, int, int, int, str, str]],
     ctx: Ctx, reserved: set[Path],
 ) -> Path:
-    """boxes: (x, y, w, h, mode('solid'|'blur'), color) in pixel coordinates."""
+    """boxes: (x, y, w, h, mode('solid'|'blur'|'pixelate'), color) in pixels."""
     verify_writable(path)
     ctx.status(i18n.tr("action.redacting", name=path.name))
     img = ImageOps.exif_transpose(Image.open(path)).convert("RGBA")
@@ -485,6 +667,13 @@ def redact_photo(
         if mode == "blur":
             patch = img.crop(region).filter(ImageFilter.GaussianBlur(18))
             img.paste(patch, region)
+        elif mode == "pixelate":
+            patch = img.crop(region)
+            mosaic = patch.resize(
+                (max(1, patch.width // PIXELATE_BLOCK), max(1, patch.height // PIXELATE_BLOCK)),
+                Image.NEAREST,
+            ).resize(patch.size, Image.NEAREST)
+            img.paste(mosaic, region)
         else:
             draw = ImageDraw.Draw(img)
             draw.rectangle(region, fill=color)
@@ -495,21 +684,244 @@ def redact_photo(
     return out_path
 
 
+#: Canvas ratios offered by the background tool.
+ASPECT_RATIOS = {
+    "1:1": 1.0, "4:3": 4 / 3, "3:2": 3 / 2, "16:9": 16 / 9, "9:16": 9 / 16,
+}
+
+
+def _hex_rgb(value, fallback: tuple[int, int, int] = (255, 255, 255)) -> tuple[int, int, int]:
+    try:
+        parts = ImageColor.getrgb(str(value))
+    except Exception:
+        return fallback
+    return parts[0], parts[1], parts[2]
+
+
+def _linear_gradient(size: tuple[int, int], start: str, end: str, angle: float) -> Image.Image:
+    """Directional gradient interpolated by projection onto *angle* degrees."""
+    width, height = size
+    first = _hex_rgb(start, (255, 255, 255))
+    last = _hex_rgb(end, (0, 0, 0))
+    samples = 192
+    theta = math.radians(float(angle) % 360.0)
+    dx, dy = math.cos(theta), math.sin(theta)
+    span = abs(dx) * (samples - 1) + abs(dy) * (samples - 1)
+    small = Image.new("RGB", (samples, samples))
+    pixels = small.load()
+    center = (samples - 1) / 2.0
+    for y in range(samples):
+        for x in range(samples):
+            projection = (x - center) * dx + (y - center) * dy
+            t = projection / span + 0.5 if span else 0.0
+            t = max(0.0, min(1.0, t))
+            pixels[x, y] = (
+                round(first[0] + (last[0] - first[0]) * t),
+                round(first[1] + (last[1] - first[1]) * t),
+                round(first[2] + (last[2] - first[2]) * t),
+            )
+    return small.resize(size, Image.BILINEAR)
+
+
+def _cover_image(path: Path, size: tuple[int, int]) -> Image.Image:
+    cover = ImageOps.exif_transpose(Image.open(path)).convert("RGB")
+    scale = max(size[0] / cover.width, size[1] / cover.height)
+    resized = cover.resize(
+        (max(1, math.ceil(cover.width * scale)), max(1, math.ceil(cover.height * scale))),
+        Image.LANCZOS,
+    )
+    left = (resized.width - size[0]) // 2
+    top = (resized.height - size[1]) // 2
+    return resized.crop((left, top, left + size[0], top + size[1]))
+
+
+def _background_layer(size: tuple[int, int], fill: dict) -> Image.Image:
+    kind = str((fill or {}).get("type", "color"))
+    if kind == "gradient":
+        return _linear_gradient(
+            size, fill.get("from", "#FFFFFF"), fill.get("to", "#000000"),
+            fill.get("angle", 0.0))
+    if kind == "image":
+        source = Path(str(fill.get("path", "")))
+        if not source.exists():
+            raise EngineError(i18n.tr("err.background_image", name=source.name))
+        return _cover_image(source, size)
+    return Image.new("RGB", size, _hex_rgb(fill.get("color", "#FFFFFF")))
+
+
 def add_background(
-    path: Path, color: str, width: int | None, height: int | None,
-    ctx: Ctx, reserved: set[Path],
+    path: Path, options: dict, ctx: Ctx, reserved: set[Path],
 ) -> Path:
+    """Place the photo on a larger canvas built from the chosen fill.
+
+    ``options`` keys: ``fill`` (color/gradient/image), ``aspect``,
+    ``margin`` (px), ``radius`` (px, image corners) and ``fit``.
+    """
     verify_writable(path)
     ctx.status(i18n.tr("action.adding_background_to", name=path.name))
-    img = Image.open(path).convert("RGBA")
-    target_w = width or img.width
-    target_h = height or img.height
-    scale = min(1.0, target_w / img.width, target_h / img.height)
-    resized = img.resize((max(1, int(img.width * scale)), max(1, int(img.height * scale))), Image.LANCZOS)
-    canvas = Image.new("RGB", (target_w, target_h), color)
-    canvas.paste(resized, ((target_w - resized.width) // 2, (target_h - resized.height) // 2), resized)
+    options = options or {}
+    fill = options.get("fill") or {"type": "color", "color": "#FFFFFF"}
+    margin = max(0, int(options.get("margin", 0)))
+    radius = max(0, int(options.get("radius", 0)))
+    img = ImageOps.exif_transpose(Image.open(path)).convert("RGBA")
+
+    canvas_w = img.width + margin * 2
+    canvas_h = img.height + margin * 2
+    ratio = ASPECT_RATIOS.get(str(options.get("aspect", "original")))
+    if ratio:
+        if canvas_w / canvas_h < ratio:
+            canvas_w = int(round(canvas_h * ratio))
+        elif canvas_w / canvas_h > ratio:
+            canvas_h = int(round(canvas_w / ratio))
+    canvas_w = max(canvas_w, img.width)
+    canvas_h = max(canvas_h, img.height)
+
+    canvas = _background_layer((canvas_w, canvas_h), fill)
+    alpha = img.getchannel("A")
+    if radius > 0:
+        mask = Image.new("L", img.size, 0)
+        ImageDraw.Draw(mask).rounded_rectangle(
+            (0, 0, img.width - 1, img.height - 1),
+            radius=min(radius, max(img.size) // 2), fill=255)
+        alpha = ImageChops.multiply(alpha, mask)
+    canvas.paste(img, ((canvas_w - img.width) // 2, (canvas_h - img.height) // 2), alpha)
     out_path = _unique(path.parent, f"{path.stem} Background", ".png", reserved)
     canvas.save(out_path, "PNG")
+    ctx.progress(1.0)
+    return out_path
+
+
+def _shift_temperature(img: Image.Image, value: float) -> Image.Image:
+    amount = max(-100.0, min(100.0, float(value))) / 100.0
+    if amount == 0:
+        return img
+    red = img.getchannel("R").point(
+        lambda p: max(0, min(255, int(round(p * (1.0 + 0.28 * amount))))))
+    blue = img.getchannel("B").point(
+        lambda p: max(0, min(255, int(round(p * (1.0 - 0.28 * amount))))))
+    return Image.merge("RGB", (red, img.getchannel("G"), blue))
+
+
+def _apply_vibrance(img: Image.Image, value: float) -> Image.Image:
+    amount = max(-100.0, min(100.0, float(value))) / 100.0
+    if amount == 0:
+        return img
+    hue, saturation, brightness = img.convert("HSV").split()
+    if amount > 0:
+        table = [
+            max(0, min(255, int(round(x + amount * (255 - x) * x / 255.0))))
+            for x in range(256)
+        ]
+    else:
+        table = [
+            max(0, min(255, int(round(x + amount * x * x / 255.0))))
+            for x in range(256)
+        ]
+    saturation = saturation.point(table)
+    return Image.merge("HSV", (hue, saturation, brightness)).convert("RGB")
+
+
+def _apply_preset(img: Image.Image, preset: str) -> Image.Image:
+    if preset == "mono":
+        return ImageOps.grayscale(img).convert("RGB")
+    if preset == "sepia":
+        return ImageOps.colorize(
+            ImageOps.grayscale(img), black=(38, 22, 10), white=(255, 240, 205))
+    if preset == "noir":
+        return ImageEnhance.Contrast(
+            ImageOps.grayscale(img).convert("RGB")).enhance(1.35)
+    if preset == "vivid":
+        vivid = ImageEnhance.Color(img).enhance(1.4)
+        return ImageEnhance.Contrast(vivid).enhance(1.12)
+    if preset == "cool":
+        return _shift_temperature(img, -35)
+    if preset == "warm":
+        return _shift_temperature(img, 35)
+    return img
+
+
+def _vignette_mask(size: tuple[int, int], strength: float) -> Image.Image:
+    amount = max(0.0, min(100.0, float(strength))) / 100.0
+    samples = 129
+    mask = Image.new("L", (samples, samples), 255)
+    pixels = mask.load()
+    center = (samples - 1) / 2.0
+    diagonal = math.sqrt(2.0)
+    for y in range(samples):
+        for x in range(samples):
+            nx = (x - center) / center
+            ny = (y - center) / center
+            radius = math.hypot(nx, ny) / diagonal
+            falloff = max(0.0, min(1.0, (radius - 0.35) / 0.65))
+            pixels[x, y] = int(round(255 * (1.0 - amount * falloff * falloff)))
+    return mask.resize(size, Image.BILINEAR)
+
+
+def _add_grain(img: Image.Image, value: float) -> Image.Image:
+    amount = max(0.0, min(100.0, float(value))) / 100.0
+    if amount == 0:
+        return img
+    half_w = max(1, img.width // 2)
+    half_h = max(1, img.height // 2)
+    noise = Image.frombytes(
+        "L", (half_w, half_h), os.urandom(half_w * half_h)).resize(
+        img.size, Image.NEAREST)
+    noise = noise.point(
+        lambda p: max(0, min(255, int(round(128 + (p - 128) * amount * 0.5)))))
+    noise_rgb = Image.merge("RGB", (noise, noise, noise))
+    return ImageChops.add(img, noise_rgb, scale=1.0, offset=-128)
+
+
+def _apply_edits(image: Image.Image, options: dict) -> Image.Image:
+    """Preset first, then the manual adjustments, in a fixed order."""
+    options = options or {}
+    alpha = image.getchannel("A") if image.mode == "RGBA" else None
+    result = image.convert("RGB")
+    result = _apply_preset(result, str(options.get("preset", "none")))
+
+    exposure = float(options.get("exposure", 0))
+    if exposure:
+        result = ImageEnhance.Brightness(result).enhance(2.0 ** (exposure / 50.0))
+    contrast = float(options.get("contrast", 0))
+    if contrast:
+        result = ImageEnhance.Contrast(result).enhance(1.0 + contrast / 100.0)
+    saturation = float(options.get("saturation", 0))
+    if saturation:
+        result = ImageEnhance.Color(result).enhance(1.0 + saturation / 100.0)
+    temperature = float(options.get("temperature", 0))
+    if temperature:
+        result = _shift_temperature(result, temperature)
+    vibrance = float(options.get("vibrance", 0))
+    if vibrance:
+        result = _apply_vibrance(result, vibrance)
+    sharpness = float(options.get("sharpness", 0))
+    if sharpness > 0:
+        result = result.filter(ImageFilter.UnsharpMask(
+            radius=2, percent=int(round(sharpness * 1.5)), threshold=3))
+    vignette = float(options.get("vignette", 0))
+    if vignette > 0:
+        result = Image.merge("RGB", [
+            ImageChops.multiply(channel, _vignette_mask(result.size, vignette))
+            for channel in result.split()
+        ])
+    grain = float(options.get("grain", 0))
+    if grain > 0:
+        result = _add_grain(result, grain)
+    if alpha is not None:
+        result = result.convert("RGBA")
+        result.putalpha(alpha)
+    return result
+
+
+def edit_image(path: Path, options: dict, ctx: Ctx, reserved: set[Path]) -> Path:
+    verify_writable(path)
+    ctx.status(i18n.tr("action.editing", name=path.name))
+    image = ImageOps.exif_transpose(Image.open(path))
+    if image.mode not in ("RGB", "RGBA"):
+        image = image.convert("RGBA" if "A" in image.mode or "transparency" in image.info else "RGB")
+    result = _apply_edits(image, options)
+    out_path = _unique(path.parent, f"{path.stem} Edited", ".png", reserved)
+    result.save(out_path, "PNG")
     ctx.progress(1.0)
     return out_path
 
@@ -599,18 +1011,25 @@ def make_collage(
 # Audio tools
 # ---------------------------------------------------------------------------
 
+#: Extra containers that are not conversion targets; the shared encoders live
+#: in ``engines.CODEC_ARGS`` (mp3, m4a, wav, flac, ogg, opus, aiff, wma).
 AUDIO_CODEC_ARGS = {
-    "ogg": ["-c:a", "libvorbis", "-q:a", "4"],
-    "opus": ["-c:a", "libopus", "-b:a", "128k"],
     "aac": ["-c:a", "aac", "-b:a", "192k"],
-    "wma": ["-c:a", "wmav2", "-b:a", "192k"],
     "m4b": ["-c:a", "aac", "-b:a", "192k"],
 }
 
+#: Source extensions that reuse another container's encoder arguments.
+AUDIO_CODEC_ALIASES = {"aif": "aiff"}
+
 
 def audio_codec_args(path_or_ext: Path | str) -> list[str]:
+    """FFmpeg codec arguments for an audio path or extension.
+
+    ``.aif`` is encoded as ``.aiff``; unknown containers raise ``EngineError``.
+    """
     name = str(path_or_ext).lower().replace("\\", "/").rsplit("/", 1)[-1]
     ext = name.rsplit(".", 1)[-1] if "." in name else name
+    ext = AUDIO_CODEC_ALIASES.get(ext, ext)
     codec = CODEC_ARGS.get(ext) or AUDIO_CODEC_ARGS.get(ext)
     if codec is None:
         raise EngineError(i18n.tr("err.audio_container", ext=ext))
@@ -955,6 +1374,16 @@ def redact_video(
                 f"{current}split=2[base{index}][toblur{index}];"
                 f"[toblur{index}]crop={w}:{h}:{x}:{y},boxblur=25:1[blurred{index}];"
                 f"[base{index}][blurred{index}]overlay={x}:{y}:enable='{enable}'{label}"
+            )
+        elif mode == "pixelate":
+            block_w = max(1, w // PIXELATE_BLOCK)
+            block_h = max(1, h // PIXELATE_BLOCK)
+            chains.append(
+                f"{current}split=2[base{index}][topix{index}];"
+                f"[topix{index}]crop={w}:{h}:{x}:{y},"
+                f"scale={block_w}:{block_h}:flags=neighbor,"
+                f"scale={w}:{h}:flags=neighbor[mosaic{index}];"
+                f"[base{index}][mosaic{index}]overlay={x}:{y}:enable='{enable}'{label}"
             )
         else:
             chains.append(

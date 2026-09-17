@@ -29,7 +29,7 @@ from PySide6.QtWidgets import (
 
 from .. import i18n, progress, tools
 from ..media import CREATE_NO_WINDOW, ffmpeg_path
-from .base import ToolDialog
+from .base import ToolDialog, align_form, chip_button, section_label
 from .ui.canvas import CropCanvas
 from .ui.video import BoxDrawDialog, VideoPane
 
@@ -80,6 +80,7 @@ class TrimVideoDialog(ToolDialog):
 
         form = QFormLayout()
         form.setSpacing(10)
+        align_form(form)
         self.start_spin = QDoubleSpinBox()
         self.start_spin.setRange(0.0, max(self._duration, 0.01))
         self.start_spin.setDecimals(3)
@@ -94,13 +95,13 @@ class TrimVideoDialog(ToolDialog):
         self._body.addLayout(form)
 
         row = QHBoxLayout()
-        set_in = QPushButton(i18n.tr("btn.set_in"))
+        set_in = chip_button(i18n.tr("btn.set_in"))
         set_in.clicked.connect(lambda: self.start_spin.setValue(
             self.pane._player.position() / 1000.0))
-        set_out = QPushButton(i18n.tr("btn.set_out"))
+        set_out = chip_button(i18n.tr("btn.set_out"))
         set_out.clicked.connect(lambda: self.end_spin.setValue(
             self.pane._player.position() / 1000.0))
-        play = QPushButton(i18n.tr("btn.play_selection"))
+        play = chip_button(i18n.tr("btn.play_selection"))
         play.clicked.connect(self._play_selection)
         row.addWidget(set_in)
         row.addWidget(set_out)
@@ -156,19 +157,19 @@ class CropVideoDialog(ToolDialog):
         self.time_spin.setValue(min(self._duration / 2.0, 3.0))
         self.time_spin.setSuffix(" s")
         row.addWidget(self.time_spin)
-        refresh = QPushButton(i18n.tr("btn.refresh_frame"))
+        refresh = chip_button(i18n.tr("btn.refresh_frame"))
         refresh.clicked.connect(self._refresh_frame)
         row.addWidget(refresh)
         row.addSpacing(12)
         self.aspect = QComboBox()
         self.aspect.addItems([i18n.tr("opt.free"), "1:1", "3:2", "4:3", "16:9", "9:16"])
-        row.addWidget(QLabel(i18n.tr("lbl.aspect")))
+        row.addWidget(section_label(i18n.tr("lbl.aspect")))
         row.addWidget(self.aspect)
         row.addStretch(1)
         self._body.addLayout(row)
 
         self.aspect.currentIndexChanged.connect(self._aspect_changed)
-        select_all = QPushButton(i18n.tr("btn.select_all"))
+        select_all = chip_button(i18n.tr("btn.select_all"))
         select_all.clicked.connect(self._select_all)
         row.addWidget(select_all)
         self.add_buttons(i18n.tr("btn.crop_video"))
@@ -312,13 +313,13 @@ class SnapshotsDialog(ToolDialog):
         self._body.addWidget(self.pane)
 
         row = QHBoxLayout()
-        play = QPushButton(i18n.tr("btn.play"))
+        play = chip_button(i18n.tr("btn.play"))
         play.clicked.connect(self.pane.play)
-        stop = QPushButton(i18n.tr("btn.stop"))
+        stop = chip_button(i18n.tr("btn.stop"))
         stop.clicked.connect(self.pane._player.stop)
-        back = QPushButton(i18n.tr("btn.frame_back"))
+        back = chip_button(i18n.tr("btn.frame_back"))
         back.clicked.connect(lambda: self._step(-1))
-        forward = QPushButton(i18n.tr("btn.frame_forward"))
+        forward = chip_button(i18n.tr("btn.frame_forward"))
         forward.clicked.connect(lambda: self._step(1))
         capture = QPushButton(i18n.tr("btn.add_frame"))
         capture.setProperty("accent", True)
@@ -334,7 +335,7 @@ class SnapshotsDialog(ToolDialog):
         self.strip.setFixedHeight(112)
         self.strip.setMovement(QListWidget.Movement.Static)
         self._body.addWidget(self.strip)
-        remove = QPushButton(i18n.tr("btn.remove_selected"))
+        remove = chip_button(i18n.tr("btn.remove_selected"))
         remove.clicked.connect(self._remove_selected)
         row2 = QHBoxLayout()
         row2.addWidget(remove)
@@ -406,6 +407,7 @@ class SplitVideoDialog(ToolDialog):
         self._body.addWidget(heading)
         form = QFormLayout()
         form.setSpacing(10)
+        align_form(form)
         self.parts = QSpinBox()
         self.parts.setRange(2, 20)
         self.parts.setValue(2)
@@ -457,11 +459,11 @@ class RedactVideoDialog(ToolDialog):
         self._body.addWidget(self.table)
 
         row = QHBoxLayout()
-        draw = QPushButton(i18n.tr("btn.draw_box"))
+        draw = chip_button(i18n.tr("btn.draw_box"))
         draw.clicked.connect(self._draw_box)
-        extend = QPushButton(i18n.tr("btn.extend_end"))
+        extend = chip_button(i18n.tr("btn.extend_end"))
         extend.clicked.connect(self._extend)
-        remove = QPushButton(i18n.tr("btn.delete_selected"))
+        remove = chip_button(i18n.tr("btn.delete_selected"))
         remove.clicked.connect(self._delete)
         row.addWidget(draw)
         row.addWidget(extend)
@@ -471,12 +473,14 @@ class RedactVideoDialog(ToolDialog):
 
         row2 = QHBoxLayout()
         self.mode = QComboBox()
-        self.mode.addItems([i18n.tr("opt.solid"), i18n.tr("opt.blur")])
+        self.mode.addItems(
+            [i18n.tr("opt.solid"), i18n.tr("opt.blur"), i18n.tr("opt.pixelate")]
+        )
         self.color_button = QPushButton(i18n.tr("btn.color"))
         self._color = QColor("#000000")
         self._sync_color()
         self.color_button.clicked.connect(self._pick_color)
-        row2.addWidget(QLabel(i18n.tr("lbl.effect")))
+        row2.addWidget(section_label(i18n.tr("lbl.effect")))
         row2.addWidget(self.mode)
         row2.addWidget(self.color_button)
         row2.addStretch(1)
@@ -579,7 +583,7 @@ class RedactVideoDialog(ToolDialog):
             self, i18n.tr("dlg.redact_video.title"),
             i18n.tr("dlg.redact_video.need_box"))
             return
-        mode = "solid" if self.mode.currentIndex() == 0 else "blur"
+        mode = ("solid", "blur", "pixelate")[self.mode.currentIndex()]
         path = self._path
         color = self._color.name()
         progress.run_job(
@@ -599,8 +603,8 @@ class JoinDialog(ToolDialog):
         self.list.setMinimumHeight(180)
         layout.addWidget(self.list, 1)
         buttons = QVBoxLayout()
-        up = QPushButton(i18n.tr("btn.move_up"))
-        down = QPushButton(i18n.tr("btn.move_down"))
+        up = chip_button(i18n.tr("btn.move_up"))
+        down = chip_button(i18n.tr("btn.move_down"))
         up.clicked.connect(lambda: self._move(-1))
         down.clicked.connect(lambda: self._move(1))
         buttons.addWidget(up)

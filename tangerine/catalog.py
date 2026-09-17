@@ -5,14 +5,15 @@ from pathlib import Path
 
 from . import media
 
-IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif", ".tiff", ".tif", ".svg", ".bmp"}
-RASTER_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif", ".tiff", ".tif", ".bmp"}
+IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".avif", ".heic", ".heif", ".tiff", ".tif", ".svg", ".bmp"}
+RASTER_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".avif", ".heic", ".heif", ".tiff", ".tif", ".bmp"}
 SVG_EXTS = {".svg"}
 GIF_EXTS = {".gif"}
-AUDIO_EXTS = {".mp3", ".m4a", ".wav", ".flac"}
-VIDEO_EXTS = {".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v"}
+AUDIO_EXTS = {".mp3", ".m4a", ".wav", ".flac", ".ogg", ".opus", ".aiff", ".aif", ".wma"}
+VIDEO_EXTS = {".mp4", ".mov", ".mkv", ".avi", ".webm", ".wmv", ".m4v"}
 PDF_EXTS = {".pdf"}
 TXT_EXTS = {".txt"}
+SUB_EXTS = {".srt", ".vtt"}
 DOC_EXTS = {".docx", ".xlsx", ".pptx", ".csv", ".rtf", ".md", ".odt", ".epub"}
 ARCHIVE_EXTS = {".zip", ".tar", ".gz", ".rar"}
 
@@ -22,14 +23,26 @@ DOCX_OUT_IMAGE_EXTS = {".jpg", ".jpeg", ".png"}
 DOCX_OUT_PDF_EXTS = {".pdf"}
 TXT_OUT_PDF_EXTS = {".pdf"}
 
-IMAGE_TARGETS = ["jpg", "png", "webp", "heic", "tiff", "pdf"]
-AUDIO_TARGETS = ["mp3", "m4a", "wav", "flac"]
-VIDEO_TARGETS = ["mp4", "mov", "mkv", "gif", "mp3", "m4a"]
-GIF_TARGETS = ["mp4", "mov", "mkv"]
+IMAGE_TARGETS = ["jpg", "png", "webp", "avif", "heic", "tiff", "pdf"]
+AUDIO_TARGETS = ["mp3", "m4a", "wav", "flac", "ogg", "opus", "aiff", "wma"]
+VIDEO_TARGETS = ["mp4", "mov", "mkv", "webm", "avi", "wmv", "gif", "mp3", "m4a"]
+GIF_TARGETS = ["mp4", "mov", "mkv", "webm", "avi", "wmv"]
 ARCHIVE_TARGETS = ["zip", "tar", "gz", "rar"]
 PDF_TARGETS = ["docx", "jpg", "png", "txt"]
 TXT_TARGETS = ["pdf", "jpg", "png"]
 IMAGE_DOC_TARGETS = ["pdf", "docx"]
+
+#: Subtitle targets per source extension; subtitles need no external engine.
+SUB_TARGETS = {
+    ".srt": ("vtt", "txt"),
+    ".vtt": ("srt", "txt"),
+}
+
+#: Targets that only FFmpeg can produce.
+FFMPEG_TARGETS = {
+    "mp3", "m4a", "wav", "flac", "ogg", "opus", "aiff", "wma",
+    "mp4", "mov", "mkv", "gif", "webm", "avi", "wmv",
+}
 
 DOC_CONVERSIONS = {
     ".docx": ("txt", "pdf", "jpg", "png"),
@@ -75,6 +88,7 @@ FAMILY_AUDIO = "audio"
 FAMILY_VIDEO = "video"
 FAMILY_PDF = "pdf"
 FAMILY_TXT = "txt"
+FAMILY_SUB = "sub"
 FAMILY_DOC = "doc"
 FAMILY_ARCHIVE = "archive"
 
@@ -109,6 +123,8 @@ def family_of(path: Path) -> str | None:
         return FAMILY_VIDEO
     if ext in PDF_EXTS:
         return FAMILY_PDF
+    if ext in SUB_EXTS:
+        return FAMILY_SUB
     if ext in TXT_EXTS:
         return FAMILY_TXT
     if ext in DOC_EXTS:
@@ -210,16 +226,17 @@ def _conversion(ext: str, target: str, family: str) -> Conversion | None:
     if target in ("jpg", "png", "tiff", "webp"):
         if "pillow" not in engines:
             return None
-    if target == "heic" and "heic" not in engines:
+    if target in ("heic", "avif") and "heic" not in engines:
+        # The pillow-heif plugin registers both the HEIF and AVIF codecs.
         return None
     if target == "pdf":
         if family in (FAMILY_IMAGE, FAMILY_TXT) and "pdfium" not in engines and "pillow" not in engines:
             return None
     if target == "docx" and "docx" not in engines:
         return None
-    if target == "txt" and "pypdf" not in engines:
+    if target == "txt" and family == FAMILY_PDF and "pypdf" not in engines:
         return None
-    if target in ("mp3", "m4a", "wav", "flac", "mp4", "mov", "mkv", "gif") and "ffmpeg" not in engines:
+    if target in FFMPEG_TARGETS and "ffmpeg" not in engines:
         return None
     if target == "rar" and "rar" not in engines:
         return None
@@ -247,6 +264,16 @@ def _doc_conversion(source_ext: str, target: str, family: str) -> Conversion | N
         engine="engine",
         family=family,
     )
+
+
+def _subtitle_targets(exts: set[str]) -> list[str]:
+    """Subtitle targets offered for a selection, skipping formats already present."""
+    targets: list[str] = []
+    for source in SUB_TARGETS:
+        for target in SUB_TARGETS[source]:
+            if target not in targets and target not in exts:
+                targets.append(target)
+    return targets
 
 
 def conversions_for(paths_: list[Path]) -> list[Conversion]:
@@ -301,6 +328,11 @@ def conversions_for(paths_: list[Path]) -> list[Conversion]:
     elif family == FAMILY_TXT:
         for target in TXT_TARGETS:
             conv = _conversion("txt", target, family)
+            if conv:
+                results.append(conv)
+    elif family == FAMILY_SUB:
+        for target in _subtitle_targets(exts):
+            conv = _conversion("sub", target, family)
             if conv:
                 results.append(conv)
     elif family == FAMILY_DOC:
@@ -433,6 +465,7 @@ def tools_for(paths_: list[Path]) -> list[Tool]:
         return []
     if family == FAMILY_ARCHIVE:
         return filt(ARCHIVE_TOOLS)
+    # Subtitles (FAMILY_SUB) are converted straight to SRT/VTT/TXT: no tools.
     return []
 
 

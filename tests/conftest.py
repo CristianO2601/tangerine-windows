@@ -17,6 +17,13 @@ if str(ROOT) not in sys.path:
 
 import pytest
 
+import tempfile
+
+from tangerine import paths as _paths
+
+_SETTINGS_TMP = Path(tempfile.mkdtemp(prefix="tangerine_test_settings_"))
+_paths.settings_file = lambda: _SETTINGS_TMP / "settings.json"
+
 
 @pytest.fixture(scope="session")
 def qapp():
