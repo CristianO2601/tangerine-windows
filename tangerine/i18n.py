@@ -92,6 +92,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "action.joining": "Joining videos",
         "action.writing_metadata": "Writing metadata for {name}",
         "action.removing_metadata": "Removing metadata from {name}",
+        "action.removing_location": "Removing location from {name}",
         "action.writing": "Writing {name}",
         "action.rendering_page": "Rendering page {number} of {total}",
         "action.reading_page_ocr": "Reading page {number} of {total} with OCR",
@@ -129,6 +130,15 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "settings.language.hint": (
             "The change applies immediately to the tray icon and the wheel; "
             "windows that are already open apply it when reopened."
+        ),
+        "settings.appearance.label": "Appearance",
+        "settings.appearance.system": "System",
+        "settings.appearance.light": "Light",
+        "settings.appearance.dark": "Dark",
+        "settings.appearance.hint": (
+            "Appearance switches the material of the wheel, the progress card "
+            "and the editors between the light and dark palettes. System "
+            "follows the Windows theme."
         ),
         "settings.wheels.intro": (
             "Hold one of these combinations while dragging files in File Explorer "
@@ -237,6 +247,16 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "conv.csv": "CSV",
         "conv.xlsx": "Excel",
         "conv.html": "HTML",
+        "conv.avif": "AVIF",
+        "conv.ogg": "OGG",
+        "conv.opus": "Opus",
+        "conv.aiff": "AIFF",
+        "conv.wma": "WMA",
+        "conv.webm": "WebM",
+        "conv.avi": "AVI",
+        "conv.wmv": "WMV",
+        "conv.srt": "SRT",
+        "conv.vtt": "VTT",
         # -- shared buttons / labels ----------------------------------------
         "btn.cancel": "Cancel",
         "btn.close": "Close",
@@ -263,6 +283,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "btn.save_bleeped": "Save Bleeped Copy",
         "btn.save_converted": "Save Converted Copy",
         "btn.save_background": "Save with Background",
+        "btn.remove_location": "Remove Location",
         "btn.save_annotated": "Save Annotated Copy",
         "btn.save_speed": "Save Speed Change",
         "btn.create_visualizer": "Create Visualizer",
@@ -337,6 +358,15 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "lbl.contrast": "Contrast",
         "lbl.saturation": "Saturation",
         "lbl.sharpness": "Sharpness",
+        "lbl.exposure": "Exposure",
+        "lbl.temperature": "Temperature",
+        "lbl.vibrance": "Vibrance",
+        "lbl.vignette": "Vignette",
+        "lbl.grain": "Grain",
+        "lbl.preset": "Preset",
+        "lbl.gradient_from": "Gradient from",
+        "lbl.gradient_to": "Gradient to",
+        "lbl.angle": "Angle",
         "lbl.sections": "Number of sections",
         # -- combo options ---------------------------------------------------
         "opt.balanced": "Balanced",
@@ -361,6 +391,18 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "opt.free": "Free",
         "opt.solid": "Solid",
         "opt.blur": "Blur",
+        "opt.pixelate": "Pixelated",
+        "opt.bg_color": "Color",
+        "opt.bg_gradient": "Gradient",
+        "opt.bg_image": "Image",
+        "opt.aspect_original": "Original",
+        "opt.preset_none": "None",
+        "opt.preset_mono": "Mono",
+        "opt.preset_sepia": "Sepia",
+        "opt.preset_noir": "Noir",
+        "opt.preset_vivid": "Vivid",
+        "opt.preset_cool": "Cool",
+        "opt.preset_warm": "Warm",
         "opt.mono": "Mono mixdown",
         "opt.stereo": "Two-channel stereo",
         "opt.landscape": "Landscape 1280 x 720",
@@ -392,10 +434,13 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "dlg.redact.no_faces": "No faces were detected.",
         "dlg.redact.need_box": "Draw at least one redaction box.",
         "dlg.background.color_title": "Background Color",
+        "dlg.background.image_title": "Background Image",
         "dlg.background.note": (
-            "The image is centered on a canvas of the chosen color. "
-            "Transparent areas show the background."
+            "The image is centered on a canvas built from the chosen fill. "
+            "The margin and aspect expand the canvas and the photo is never "
+            "enlarged; corners follow the radius."
         ),
+        "msg.background.no_image": "Choose a background image first.",
         "dlg.annotate.color_title": "Annotation Color",
         "dlg.annotate.need_op": "Add at least one annotation.",
         "dlg.annotate.text_title": "Text",
@@ -416,6 +461,9 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         ),
         "dlg.metadata.save_image_only_strip": (
             " Use Remove All to strip metadata from this file."
+        ),
+        "dlg.metadata.location_invalid": (
+            "Latitude and longitude must be decimal numbers."
         ),
         "dlg.channels.heading": "{name} currently has {count} channel(s).",
         "dlg.channels.hint": (
@@ -488,9 +536,14 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "meta.audio_codec": "Audio codec",
         "meta.channels": "Channels",
         "meta.sample_rate": "Sample rate",
+        "meta.latitude": "Latitude",
+        "meta.longitude": "Longitude",
+        "meta.altitude": "Altitude",
         # -- engine / tool errors ---------------------------------------------
         "err.cancelled": "Cancelled.",
         "err.source_missing": "The source file could not be found: {name}",
+        "err.gps_image_only": "Location can only be removed from images.",
+        "err.background_image": "Background image not found: {name}",
         "err.file_missing": "The file no longer exists: {name}",
         "err.file_locked": "The file is locked or read-only: {name}",
         "err.read_image": "Could not read image: {name}\n{detail}",
@@ -647,6 +700,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "action.joining": "Uniendo vídeos",
         "action.writing_metadata": "Escribiendo metadatos de {name}",
         "action.removing_metadata": "Quitando metadatos de {name}",
+        "action.removing_location": "Quitando ubicación de {name}",
         "action.writing": "Escribiendo {name}",
         "action.rendering_page": "Dibujando la página {number} de {total}",
         "action.reading_page_ocr": "Leyendo la página {number} de {total} con OCR",
@@ -684,6 +738,15 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "settings.language.hint": (
             "El cambio se aplica al instante en la bandeja y en la rueda; las "
             "ventanas ya abiertas lo aplican al volver a abrirse."
+        ),
+        "settings.appearance.label": "Apariencia",
+        "settings.appearance.system": "Sistema",
+        "settings.appearance.light": "Claro",
+        "settings.appearance.dark": "Oscuro",
+        "settings.appearance.hint": (
+            "La apariencia cambia el material de la rueda, la tarjeta de "
+            "progreso y los editores entre las paletas clara y oscura. "
+            "Sistema sigue el tema de Windows."
         ),
         "settings.wheels.intro": (
             "Mantén una de estas combinaciones al arrastrar archivos en el "
@@ -797,6 +860,16 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "conv.csv": "CSV",
         "conv.xlsx": "Excel",
         "conv.html": "HTML",
+        "conv.avif": "AVIF",
+        "conv.ogg": "OGG",
+        "conv.opus": "Opus",
+        "conv.aiff": "AIFF",
+        "conv.wma": "WMA",
+        "conv.webm": "WebM",
+        "conv.avi": "AVI",
+        "conv.wmv": "WMV",
+        "conv.srt": "SRT",
+        "conv.vtt": "VTT",
         # -- shared buttons / labels ----------------------------------------
         "btn.cancel": "Cancelar",
         "btn.close": "Cerrar",
@@ -823,6 +896,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "btn.save_bleeped": "Guardar copia silenciada",
         "btn.save_converted": "Guardar copia convertida",
         "btn.save_background": "Guardar con fondo",
+        "btn.remove_location": "Quitar ubicación",
         "btn.save_annotated": "Guardar copia anotada",
         "btn.save_speed": "Guardar cambio de velocidad",
         "btn.create_visualizer": "Crear visualizador",
@@ -897,6 +971,15 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "lbl.contrast": "Contraste",
         "lbl.saturation": "Saturación",
         "lbl.sharpness": "Nitidez",
+        "lbl.exposure": "Exposición",
+        "lbl.temperature": "Temperatura",
+        "lbl.vibrance": "Vibranza",
+        "lbl.vignette": "Viñeta",
+        "lbl.grain": "Grano",
+        "lbl.preset": "Preajuste",
+        "lbl.gradient_from": "Degradado desde",
+        "lbl.gradient_to": "Degradado hasta",
+        "lbl.angle": "Ángulo",
         "lbl.sections": "Número de secciones",
         # -- combo options ---------------------------------------------------
         "opt.balanced": "Equilibrado",
@@ -921,6 +1004,18 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "opt.free": "Libre",
         "opt.solid": "Sólido",
         "opt.blur": "Desenfoque",
+        "opt.pixelate": "Pixelado",
+        "opt.bg_color": "Color",
+        "opt.bg_gradient": "Degradado",
+        "opt.bg_image": "Imagen",
+        "opt.aspect_original": "Original",
+        "opt.preset_none": "Ninguno",
+        "opt.preset_mono": "Mono",
+        "opt.preset_sepia": "Sepia",
+        "opt.preset_noir": "Noir",
+        "opt.preset_vivid": "Vívido",
+        "opt.preset_cool": "Frío",
+        "opt.preset_warm": "Cálido",
         "opt.mono": "Mezcla mono",
         "opt.stereo": "Estéreo de dos canales",
         "opt.landscape": "Horizontal 1280 x 720",
@@ -952,10 +1047,13 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "dlg.redact.no_faces": "No se detectaron caras.",
         "dlg.redact.need_box": "Dibuja al menos un recuadro de censura.",
         "dlg.background.color_title": "Color de fondo",
+        "dlg.background.image_title": "Imagen de fondo",
         "dlg.background.note": (
-            "La imagen se centra en un lienzo del color elegido. "
-            "Las zonas transparentes muestran el fondo."
+            "La imagen se centra en un lienzo creado con el relleno elegido. "
+            "El margen y la proporción amplían el lienzo y la foto nunca se "
+            "agranda; las esquinas siguen el radio."
         ),
+        "msg.background.no_image": "Elige primero una imagen de fondo.",
         "dlg.annotate.color_title": "Color de anotación",
         "dlg.annotate.need_op": "Añade al menos una anotación.",
         "dlg.annotate.text_title": "Texto",
@@ -976,6 +1074,9 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         ),
         "dlg.metadata.save_image_only_strip": (
             " Usa Quitar todo para eliminar los metadatos de este archivo."
+        ),
+        "dlg.metadata.location_invalid": (
+            "La latitud y la longitud deben ser números decimales."
         ),
         "dlg.channels.heading": "{name} tiene actualmente {count} canal(es).",
         "dlg.channels.hint": (
@@ -1051,9 +1152,14 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "meta.audio_codec": "Códec de audio",
         "meta.channels": "Canales",
         "meta.sample_rate": "Frecuencia de muestreo",
+        "meta.latitude": "Latitud",
+        "meta.longitude": "Longitud",
+        "meta.altitude": "Altitud",
         # -- engine / tool errors ---------------------------------------------
         "err.cancelled": "Cancelado.",
         "err.source_missing": "No se encontró el archivo de origen: {name}",
+        "err.gps_image_only": "La ubicación solo se puede quitar de imágenes.",
+        "err.background_image": "No se encontró la imagen de fondo: {name}",
         "err.file_missing": "El archivo ya no existe: {name}",
         "err.file_locked": "El archivo está bloqueado o es de solo lectura: {name}",
         "err.read_image": "No se pudo leer la imagen: {name}\n{detail}",

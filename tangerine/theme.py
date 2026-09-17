@@ -3,7 +3,25 @@
 The macOS app draws a frosted "liquid glass" fan with an orange accent taken
 from the app icon. On Windows the same language is expressed with rounded
 corners, translucent surfaces and the orange accent.
+
+Two token families are exposed:
+
+* :func:`palette` — the QSS palette used by the settings window and dialogs.
+* :func:`hud` — the HUD material tokens (translucent washes, halo, hub and
+  chips) shared by the wheel, the progress card and the editors.
+
+The appearance is resolved by :func:`appearance_mode` / :func:`is_dark` and
+can be overridden with the ``appearanceTheme`` setting (``system``, ``light``
+or ``dark``).  :func:`apply_app_theme` republishes the stylesheet on the
+running ``QApplication`` and notifies every :func:`add_theme_listener`
+callback so open windows can repaint.
 """
+
+from __future__ import annotations
+
+import logging
+
+log = logging.getLogger("tangerine")
 
 ACCENT = "#F87800"
 ACCENT_BRIGHT = "#F8A850"
@@ -12,6 +30,9 @@ ACCENT_DARK = "#D96800"
 FAN_PETAL_RADIUS = 148.0
 FAN_CENTER_RADIUS = 46.0
 FAN_HOVER_LIFT = 10.0
+
+APPEARANCE_DEFAULT = "system"
+APPEARANCE_VALUES = ("system", "light", "dark")
 
 LIGHT = {
     "window": "#F5F3F0",
@@ -28,6 +49,9 @@ LIGHT = {
     "petal_edge": (214, 208, 200, 235),
     "petal_text": "#26231F",
     "shadow": (0, 0, 0, 70),
+    "slider_track": "rgba(0, 0, 0, 40)",
+    "slider_thumb": "#FFFFFF",
+    "slider_thumb_edge": "rgba(0, 0, 0, 55)",
 }
 
 DARK = {
@@ -45,14 +69,89 @@ DARK = {
     "petal_edge": (96, 89, 81, 235),
     "petal_text": "#F2EFEA",
     "shadow": (0, 0, 0, 120),
+    "slider_track": "rgba(255, 255, 255, 45)",
+    "slider_thumb": "#FFFFFF",
+    "slider_thumb_edge": "rgba(255, 255, 255, 75)",
 }
+
+# HUD material tokens (v1.7.0).  Colors are ``(r, g, b, a)`` tuples except
+# ``peach`` and ``icon``, which are opaque ``#rrggbb`` strings.
+HUD_LIGHT = {
+    "wash": (255, 244, 236, 200),
+    "halo": (125, 110, 100, 110),
+    "hub": (255, 252, 249, 232),
+    "peach": "#FFD9C2",
+    "track": (0, 0, 0, 60),
+    "icon": "#3A2416",
+}
+
+HUD_DARK = {
+    "wash": (30, 25, 22, 195),
+    "halo": (20, 16, 14, 150),
+    "hub": (40, 33, 29, 235),
+    "peach": "#3A2A20",
+    "track": (255, 255, 255, 45),
+    "icon": "#F3E7DE",
+}
+
+_theme_listeners: list = []
 
 
 def palette(dark: bool) -> dict:
+    """The QSS palette (window, card, text, borders, slider tokens)."""
     return DARK if dark else LIGHT
 
 
+def hud(dark: bool) -> dict:
+    """The HUD material tokens for *dark* or light surfaces.
+
+    Keys: ``wash`` (warm wash painted over the blurred backdrop), ``halo``
+    (translucent disc behind the wheel), ``hub`` (wheel hub capsule),
+    ``peach`` (chip fill), ``track`` (progress rails, slider grooves) and
+    ``icon`` (monochrome line icons, chip text).
+    """
+    return HUD_DARK if dark else HUD_LIGHT
+
+
+def qcolor(token):
+    """Convert a palette token (``#rrggbb`` or ``(r, g, b[, a])``) to QColor."""
+    from PySide6.QtGui import QColor
+
+    if isinstance(token, QColor):
+        return QColor(token)
+    if isinstance(token, (tuple, list)):
+        return QColor(*token)
+    return QColor(str(token))
+
+
+def appearance_mode() -> str:
+    """The persisted appearance override: ``system``, ``light`` or ``dark``.
+
+    Unknown values fall back to ``system``; missing settings packages (during
+    headless imports) resolve the same way.
+    """
+    try:
+        from . import settings
+
+        value = settings.get("appearanceTheme", APPEARANCE_DEFAULT)
+    except Exception:
+        value = APPEARANCE_DEFAULT
+    mode = str(value or APPEARANCE_DEFAULT).lower()
+    return mode if mode in APPEARANCE_VALUES else APPEARANCE_DEFAULT
+
+
 def is_dark() -> bool:
+    """Whether surfaces should use the dark palette.
+
+    ``appearanceTheme`` wins when it is ``light`` or ``dark``; ``system``
+    follows the Qt color-scheme hint and defaults to light without a
+    ``QGuiApplication``.
+    """
+    mode = appearance_mode()
+    if mode == "light":
+        return False
+    if mode == "dark":
+        return True
     try:
         from PySide6.QtGui import QGuiApplication
 
@@ -67,6 +166,52 @@ def is_dark() -> bool:
         return False
 
 
+def add_theme_listener(callback) -> None:
+    """Register *callback*, invoked with the resolved ``dark`` flag."""
+    if callback not in _theme_listeners:
+        _theme_listeners.append(callback)
+
+
+def remove_theme_listener(callback) -> None:
+    """Unregister a callback added with :func:`add_theme_listener`."""
+    if callback in _theme_listeners:
+        _theme_listeners.remove(callback)
+
+
+def refresh_listeners(dark: bool | None = None) -> None:
+    """Notify every theme listener; *dark* defaults to the current mode."""
+    if dark is None:
+        dark = is_dark()
+    for callback in list(_theme_listeners):
+        try:
+            callback(bool(dark))
+        except Exception:
+            log.exception("Theme listener failed")
+
+
+def apply_app_theme() -> bool:
+    """Apply :func:`stylesheet` for the resolved appearance to the application.
+
+    Safe to call headless (returns ``False`` when there is no ``QApplication``)
+    and safe to call repeatedly.  Listeners registered with
+    :func:`add_theme_listener` are notified afterwards.
+    """
+    try:
+        from PySide6.QtWidgets import QApplication
+
+        app = QApplication.instance()
+    except Exception:
+        log.debug("Qt widgets unavailable; the app stylesheet was not applied",
+                  exc_info=True)
+        return False
+    if app is None:
+        return False
+    dark = is_dark()
+    app.setStyleSheet(stylesheet(dark))
+    refresh_listeners(dark)
+    return True
+
+
 def rgba(c) -> str:
     if isinstance(c, str):
         return c
@@ -76,6 +221,7 @@ def rgba(c) -> str:
 
 def stylesheet(dark: bool) -> str:
     p = palette(dark)
+    h = hud(dark)
     return f"""
     QWidget {{
         color: {p['text']};
@@ -160,6 +306,26 @@ def stylesheet(dark: bool) -> str:
     QPushButton[flat="true"]:hover {{
         color: {ACCENT_BRIGHT};
     }}
+    QPushButton[chip="true"] {{
+        background: {h['peach']};
+        border: none;
+        border-radius: 9px;
+        padding: 5px 12px;
+        color: {h['icon']};
+        font-weight: 600;
+    }}
+    QPushButton[chip="true"]:hover {{
+        background: {ACCENT_BRIGHT};
+        color: #FFFFFF;
+    }}
+    QPushButton[chip="true"]:pressed {{
+        background: {ACCENT};
+        color: #FFFFFF;
+    }}
+    QPushButton[chip="true"]:disabled {{
+        background: {p['card_alt']};
+        color: {p['text_dim']};
+    }}
     QLineEdit, QPlainTextEdit, QTextEdit, QSpinBox, QDoubleSpinBox, QComboBox {{
         background: {p['field']};
         border: 1px solid {p['border']};
@@ -208,8 +374,8 @@ def stylesheet(dark: bool) -> str:
         border: 4px solid {ACCENT};
     }}
     QSlider::groove:horizontal {{
-        height: 4px;
-        background: {p['border']};
+        height: 5px;
+        background: {p['slider_track']};
         border-radius: 2px;
     }}
     QSlider::sub-page:horizontal {{
@@ -217,12 +383,15 @@ def stylesheet(dark: bool) -> str:
         border-radius: 2px;
     }}
     QSlider::handle:horizontal {{
-        background: #FFFFFF;
-        border: 2px solid {ACCENT};
+        background: {p['slider_thumb']};
+        border: 1px solid {p['slider_thumb_edge']};
         width: 14px;
         height: 14px;
         margin: -6px 0;
-        border-radius: 9px;
+        border-radius: 8px;
+    }}
+    QSlider::handle:horizontal:hover {{
+        border-color: {ACCENT};
     }}
     QScrollArea {{ border: none; background: transparent; }}
     QScrollBar:vertical {{

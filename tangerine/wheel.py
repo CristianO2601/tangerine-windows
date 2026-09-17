@@ -1,44 +1,181 @@
-"""The radial conversion and tools fan overlay."""
+"""The radial conversion/tools wheel (v1.7.0 HUD language).
+
+Geometry and behaviour follow ``docs/PLAN-V1.7.0.md`` §1.1-1.2:
+
+* a 460x460 frameless window; petals are annular wedges between ``R_IN`` and
+  ``R_OUT`` with 8 degree gaps and rounded corners;
+* every surface is *material*: the blurred desktop behind the wheel plus the
+  theme ``wash`` (see :class:`~tangerine.hud.HudBackdrop`), the halo is the
+  translucent ``halo`` token and the hub uses the ``hub`` token;
+* conversion petals show only the upper-case format name; tool petals show a
+  vector line icon plus a small upper-case label;
+* hover paints the petal flat ``ACCENT`` with dark content (120 ms animated),
+  the hub grows a capsule with the hovered label that slides in from that
+  petal (140 ms) and fades out;
+* appearance is a staggered 260 ms bloom (radius 0.6R → R with a slight
+  overshoot), the farewell shrinks to 0.94 with a fade.
+
+The wheel also keeps the hardened drag-and-drop behaviour (copy-only drags,
+highlight sound with a one-way disable, :meth:`file_paths`, :meth:`reset`)
+and adds keyboard operation (:meth:`set_keyboard_mode`): arrows rotate the
+hover with wrap-around, Enter activates and Escape hides.
+"""
 
 from __future__ import annotations
 
 import logging
 import math
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Sequence
 
-from PySide6.QtCore import QPoint, QPointF, QRectF, Qt, QUrl, Signal
+from PySide6.QtCore import (
+    QEasingCurve,
+    QPoint,
+    QPointF,
+    QRectF,
+    Qt,
+    QUrl,
+    QVariantAnimation,
+    Signal,
+)
 from PySide6.QtGui import (
     QColor,
     QFont,
     QFontMetricsF,
     QGuiApplication,
+    QImage,
     QPainter,
     QPainterPath,
-    QPen,
+    QPainterPathStroker,
     QRadialGradient,
-    QTransform,
 )
 from PySide6.QtWidgets import QWidget
 
-from . import paths as app_paths
-from . import i18n, settings, theme
-from .icons import icon_for
+from . import i18n, paths as app_paths, settings, theme
+from .hud import HudBackdrop
+from .icons import icon_for, paint_icon  # noqa: F401 (icon_for is a re-export)
 
 log = logging.getLogger("tangerine")
 
-EXTENT = theme.FAN_PETAL_RADIUS + 78.0
-PETAL_W = 70.0
-PETAL_H = 94.0
+# -- geometry (460x460 window; plan 1.2) ------------------------------------
+EXTENT = 230.0
+R_OUT = 210.0
+R_IN = 124.0
+BAND = R_OUT - R_IN
+HALO_R = R_OUT + 16.0
+HUB_R = R_IN - 6.0
+GAP_DEG = 6.5
+CORNER_R = 0.24 * BAND
+
+# -- motion ----------------------------------------------------------------
+APPEAR_MS = 190.0            # petal bloom (total ≈ APPEAR_MS + stagger·(n-1))
+APPEAR_STAGGER_MS = 16.0
+APPEAR_SCALE = 0.6           # petals start at 0.6R
+DEPART_MS = 160.0
+DEPART_SCALE = 0.94
+HOVER_MS = 120.0
+HOVER_LIFT = 4.0
+CAPSULE_MS = 140.0
+CAPSULE_FADE_MS = 100.0
+CAPSULE_H = 30.0
+CAPSULE_MIN_W = 96.0
+CAPSULE_SLIDE = 40.0
+HUB_VEIL = 0.45             # hub token alpha share: the disc stays frosted
+
+ICON_SIZE = 27.0
+ICON_LABEL_GAP = 3.0
+TOOL_LABEL_SIZE = 11
+CONVERT_LABEL_SIZE = 22      # ≈ 0.105 · R_OUT
+
+HOVER_INK = "#2B1608"
 
 
 @dataclass
 class FanItem:
+    """One petal: ``kind`` is ``"conversion"`` or ``"tool"``."""
+
     key: str
     label: str
     icon: str = ""
     kind: str = "conversion"
+
+
+def _clamp01(value: float) -> float:
+    return 0.0 if value < 0.0 else (1.0 if value > 1.0 else value)
+
+
+def _ease_out(value: float) -> float:
+    value = _clamp01(value)
+    return 1.0 - (1.0 - value) ** 3
+
+
+def _ease_out_back(value: float, strength: float = 0.35) -> float:
+    """Ease-out with a subtle overshoot (petal bloom)."""
+    value = _clamp01(value)
+    delta = value - 1.0
+    return 1.0 + (strength + 1.0) * delta**3 + strength * delta**2
+
+
+def _mix(first: QColor, second: QColor, amount: float) -> QColor:
+    amount = _clamp01(amount)
+    return QColor(
+        round(first.red() + (second.red() - first.red()) * amount),
+        round(first.green() + (second.green() - first.green()) * amount),
+        round(first.blue() + (second.blue() - first.blue()) * amount),
+        round(first.alpha() + (second.alpha() - first.alpha()) * amount),
+    )
+
+
+def _wedge_path(
+    r_in: float,
+    r_out: float,
+    a1: float,
+    a2: float,
+    corner_r: float,
+) -> QPainterPath:
+    """Annular wedge with rounded corners, ready to clip and fill.
+
+    Angles are degrees in the screen convention of :func:`math.atan2` (0° at
+    3 o'clock, growing clockwise).  The marching path is inset by *corner_r*
+    so that stroking it with a ``2 * corner_r`` round-capped/round-joined pen
+    (and filling it) rounds every corner with that radius.  The two sides are
+    inset per radius (``asin(corner / radius)``) so the stroked outline lands
+    exactly on the radial gap edges at every radius.
+    """
+    corner = max(1.5, float(corner_r))
+    inner = float(r_in) + corner
+    outer = float(r_out) - corner
+    if outer - inner < 2.0 * corner:  # degenerate band: keep a slim wedge
+        middle = (float(r_in) + float(r_out)) / 2.0
+        inner, outer = middle - corner, middle + corner
+    inset_out = math.degrees(math.asin(min(1.0, corner / max(1.0, outer))))
+    inset_in = math.degrees(math.asin(min(1.0, corner / max(1.0, inner))))
+    span = float(a2) - float(a1)
+    if span <= inset_out + inset_in + 1.0 or span <= 2.0 * inset_in + 1.0:
+        inset_out = inset_in = 0.0
+    start_out = a1 + inset_out
+    end_out = a2 - inset_out
+    start_in = a1 + inset_in
+    end_in = a2 - inset_in
+    outer_rect = QRectF(-outer, -outer, 2.0 * outer, 2.0 * outer)
+    inner_rect = QRectF(-inner, -inner, 2.0 * inner, 2.0 * inner)
+    # Qt arcs measure counter-clockwise from 3 o'clock; screen angles flip.
+    marching = QPainterPath()
+    marching.arcMoveTo(outer_rect, -start_out)
+    marching.arcTo(outer_rect, -start_out, -(end_out - start_out))
+    marching.lineTo(
+        inner * math.cos(math.radians(end_in)),
+        inner * math.sin(math.radians(end_in)),
+    )
+    marching.arcTo(inner_rect, -end_in, end_in - start_in)
+    marching.closeSubpath()
+    stroker = QPainterPathStroker()
+    stroker.setWidth(2.0 * corner)
+    stroker.setCapStyle(Qt.PenCapStyle.RoundCap)
+    stroker.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+    return stroker.createStroke(marching).united(marching)
 
 
 class TangerineWheel(QWidget):
@@ -60,13 +197,42 @@ class TangerineWheel(QWidget):
 
         self._items: list[FanItem] = []
         self._file_paths: list[str] = []
-        self._hover = -1
-        self._prompt = (i18n.tr("app.name"), "")
+        # Compatibility record of the last drop context (title, subtitle); the
+        # hub no longer paints it, `set_prompt` keeps it for older callers.
+        self._prompt: tuple[str, str] = ("", "")
         self._mode = "conversion"
         self._factory: Callable[[list[str]], Sequence[FanItem]] | None = None
         self._sound = None
         self._sound_disabled = False
         self._dark = theme.is_dark()
+
+        self._backdrop = HudBackdrop()
+        self._material: QImage | None = None
+        self._capture_rect = self.frameGeometry()
+        self._capture_stamp = 0.0
+
+        self._hover = -1
+        self._hover_values: dict[int, float] = {}
+        self._capsule_t = 0.0
+        self._capsule_label = ""
+        self._capsule_dir = QPointF(0.0, -1.0)
+        self._appear_ms = 0.0
+        self._appear_total = 0.0
+        self._depart = 0.0
+        self._depart_token = 0
+        self._keyboard_mode = False
+
+        self._appear_anim: QVariantAnimation | None = None
+        self._hover_anim: QVariantAnimation | None = None
+        self._capsule_anim: QVariantAnimation | None = None
+        self._depart_anim: QVariantAnimation | None = None
+
+        self._convert_font: QFont | None = None
+        self._tool_font: QFont | None = None
+        self._capsule_font: QFont | None = None
+
+        theme.add_theme_listener(self._on_theme_change)
+        self.destroyed.connect(lambda *_args: theme.remove_theme_listener(self._on_theme_change))
 
     # -- public API ----------------------------------------------------
 
@@ -76,36 +242,127 @@ class TangerineWheel(QWidget):
     def set_mode(self, mode: str) -> None:
         self._mode = mode
 
-    def set_items(self, items: Sequence[FanItem]) -> None:
+    def set_items(self, items: Sequence[FanItem], animate: bool = False) -> None:
+        """Replace the petals; *animate* replays the bloom (mode switches)."""
+        previous = len(self._items)
         self._items = list(items)
         self._hover = -1
+        self._hover_values = {index: 0.0 for index in range(len(self._items))}
+        self._capsule_t = 0.0
+        self._capsule_label = ""
+        if animate or (self.isVisible() and len(self._items) != previous):
+            self.play_appearance()
+        elif self._appear_total <= 0.0:
+            self._appear_ms = 0.0
         self.update()
 
     def set_prompt(self, main: str, sub: str = "") -> None:
-        self._prompt = (main, sub)
-        self.update()
+        """Compatibility no-op: the hub only shows the hovered petal label.
+
+        The subtitle is still recorded so drag hovers keep the historical
+        ``_prompt`` contract alive for older callers.
+        """
+        self._prompt = (str(main), str(sub))
 
     def center_at(self, global_pos: QPoint) -> None:
         center = QPoint(global_pos)
         screen = QGuiApplication.screenAt(center) or QGuiApplication.primaryScreen()
         if screen is not None:
             area = screen.availableGeometry()
-            margin = int(EXTENT) - 60
-            center.setX(min(max(center.x(), area.left() + margin), area.right() - margin))
-            center.setY(min(max(center.y(), area.top() + margin), area.bottom() - margin))
+            margin = int(HALO_R)
+            left, right = area.left() + margin, area.right() - margin
+            if left <= right:
+                center.setX(min(max(center.x(), left), right))
+            top, bottom = area.top() + margin, area.bottom() - margin
+            if top <= bottom:
+                center.setY(min(max(center.y(), top), bottom))
         self.move(center.x() - int(EXTENT), center.y() - int(EXTENT))
+        self._capture_backdrop()
 
     def update_cursor(self, global_pos: QPoint) -> None:
-        self._update_hover(QPointF(self.mapFromGlobal(global_pos)))
+        self._set_hover_index(self.hit_test(QPointF(self.mapFromGlobal(global_pos))))
 
     def file_paths(self) -> list[str]:
         return list(self._file_paths)
 
+    def set_files(self, files: Sequence[str] | None) -> None:
+        """Record the files the wheel acts on (keyboard/selection triggers).
+
+        Real drag-and-drop overwrites this from :meth:`dragEnterEvent`.
+        """
+        self._file_paths = [str(path) for path in (files or [])]
+
     def reset(self) -> None:
+        self._stop_animations()
         self._items = []
         self._file_paths = []
         self._hover = -1
+        self._hover_values = {}
+        self._capsule_t = 0.0
+        self._capsule_label = ""
+        self._appear_ms = 0.0
+        self._appear_total = 0.0
+        self._depart = 0.0
         self.update()
+
+    def set_keyboard_mode(self, flag: bool) -> None:
+        """Keyboard mode takes focus (drag mode never steals it)."""
+        flag = bool(flag)
+        if flag == self._keyboard_mode:
+            return
+        self._keyboard_mode = flag
+        visible = self.isVisible()
+        if flag:
+            self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, False)
+            self.setWindowFlag(Qt.WindowType.WindowDoesNotAcceptFocus, False)
+            self.show()
+            self.raise_()
+            self.activateWindow()
+            self.setFocus(Qt.FocusReason.OtherFocusReason)
+        else:
+            self.clearFocus()
+            self.setWindowFlag(Qt.WindowType.WindowDoesNotAcceptFocus, True)
+            self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
+            if visible:
+                self.show()
+
+    # -- motion ---------------------------------------------------------
+
+    def play_appearance(self) -> None:
+        """Staggered bloom: petals 0.6R → R with a fade (plan 1.2)."""
+        self._stop_animations()
+        self._depart_token += 1
+        self._depart = 0.0
+        self._hover = -1
+        self._hover_values = {index: 0.0 for index in range(len(self._items))}
+        self._capsule_t = 0.0
+        self._capsule_label = ""
+        if not self._items:
+            return
+        self._appear_total = APPEAR_MS + APPEAR_STAGGER_MS * (len(self._items) - 1)
+        self._appear_ms = 0.0
+        animation = QVariantAnimation(self)
+        animation.setStartValue(0.0)
+        animation.setEndValue(float(self._appear_total))
+        animation.setDuration(int(round(self._appear_total)))
+        animation.setEasingCurve(QEasingCurve.Type.Linear)
+        animation.valueChanged.connect(self._on_appear_tick)
+        self._appear_anim = animation
+        animation.start()
+
+    def dismiss(self) -> None:
+        """Farewell (0.94 scale + fade) followed by hide + reset."""
+        if not self.isVisible():
+            return
+        self._depart_token += 1
+        token = self._depart_token
+
+        def finished() -> None:
+            if token == self._depart_token:
+                self.hide()
+                self.reset()
+
+        self._animate_depart(finished)
 
     # -- interaction ---------------------------------------------------
 
@@ -113,34 +370,38 @@ class TangerineWheel(QWidget):
         count = len(self._items)
         if count == 0:
             return -1
-        cx = self.width() / 2.0
-        cy = self.height() / 2.0
-        dx = local.x() - cx
-        dy = local.y() - cy
+        dx = local.x() - self.width() / 2.0
+        dy = local.y() - self.height() / 2.0
         radius = math.hypot(dx, dy)
-        if radius < theme.FAN_CENTER_RADIUS:
-            return -1
-        low = theme.FAN_PETAL_RADIUS - PETAL_H / 2.0 - 8
-        high = theme.FAN_PETAL_RADIUS + PETAL_H / 2.0 + theme.FAN_HOVER_LIFT + 10
-        if radius < low or radius > high:
+        if radius < R_IN - 6.0 or radius > R_OUT + 10.0:
             return -1
         angle = math.degrees(math.atan2(dy, dx))
         step = 360.0 / count
-        half = min(step * 0.48, 62.0)
+        half = step / 2.0 - GAP_DEG * 0.35
         for index in range(count):
             target = -90.0 + (index + 0.5) * step
-            diff = (angle - target + 540.0) % 360.0 - 180.0
-            if abs(diff) <= half:
+            difference = (angle - target + 540.0) % 360.0 - 180.0
+            if abs(difference) <= half:
                 return index
         return -1
 
-    def _update_hover(self, local: QPointF) -> None:
-        index = self.hit_test(local)
-        if index != self._hover:
-            self._hover = index
-            self.update()
-            if index >= 0:
-                self._play_highlight()
+    def _set_hover_index(self, index: int) -> None:
+        if index == self._hover:
+            return
+        self._hover = index
+        self._animate_hover()
+        count = len(self._items)
+        if 0 <= index < count:
+            item = self._items[index]
+            self._capsule_label = item.label
+            step = 360.0 / count
+            radians = math.radians(-90.0 + (index + 0.5) * step)
+            self._capsule_dir = QPointF(math.cos(radians), math.sin(radians))
+            self._animate_capsule(1.0)
+            self._play_highlight()
+        else:
+            self._animate_capsule(0.0)
+        self.update()
 
     def _play_highlight(self) -> None:
         if self._sound_disabled or not settings.get("soundsAndHapticsEnabled"):
@@ -182,7 +443,8 @@ class TangerineWheel(QWidget):
             event.ignore()
             return
         subtitle = (
-            Path(files[0]).name if len(files) == 1
+            Path(files[0]).name
+            if len(files) == 1
             else i18n.tr("wheel.files_count", n=len(files))
         )
         self._prompt = (self._prompt[0], subtitle)
@@ -190,12 +452,11 @@ class TangerineWheel(QWidget):
         self._accept_copy(event)
 
     def dragMoveEvent(self, event) -> None:
-        self._update_hover(event.position())
+        self._set_hover_index(self.hit_test(event.position()))
         self._accept_copy(event)
 
     def dragLeaveEvent(self, event) -> None:
-        self._hover = -1
-        self.update()
+        self._set_hover_index(-1)
 
     def dropEvent(self, event) -> None:
         if not self._accept_copy(event):
@@ -212,168 +473,405 @@ class TangerineWheel(QWidget):
             self.hide()
 
     def mouseMoveEvent(self, event) -> None:
-        self._update_hover(event.position())
+        self._set_hover_index(self.hit_test(event.position()))
 
     def leaveEvent(self, event) -> None:
-        self._hover = -1
+        self._set_hover_index(-1)
+
+    def keyPressEvent(self, event) -> None:
+        key = event.key()
+        if key == Qt.Key.Key_Escape:
+            self.hide()
+            event.accept()
+            return
+        count = len(self._items)
+        if count == 0:
+            super().keyPressEvent(event)
+            return
+        step = -1 if key in (Qt.Key.Key_Left, Qt.Key.Key_Up) else 1
+        if key in (Qt.Key.Key_Left, Qt.Key.Key_Right, Qt.Key.Key_Up, Qt.Key.Key_Down):
+            if 0 <= self._hover < count:
+                self._set_hover_index((self._hover + step) % count)
+            else:  # first arrow press: land on the first (or last) petal
+                self._set_hover_index(0 if step > 0 else count - 1)
+        elif key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            if 0 <= self._hover < count:
+                key_name = self._items[self._hover].key
+                files = list(self._file_paths)
+                self.reset()
+                self.hide()
+                self.activated.emit(files, key_name)
+        else:
+            super().keyPressEvent(event)
+            return
+        event.accept()
+
+    # -- animations -----------------------------------------------------
+
+    def _stop_animations(self) -> None:
+        for animation in (
+            self._appear_anim,
+            self._hover_anim,
+            self._capsule_anim,
+            self._depart_anim,
+        ):
+            if animation is not None:
+                animation.stop()
+
+    def _on_appear_tick(self, value) -> None:
+        self._appear_ms = float(value)
         self.update()
 
-    # -- painting ------------------------------------------------------
+    def _animate_hover(self) -> None:
+        count = len(self._items)
+        start = {index: self._hover_value(index) for index in range(count)}
+        target = {index: (1.0 if index == self._hover else 0.0) for index in range(count)}
+        animation = QVariantAnimation(self)
+        animation.setStartValue(0.0)
+        animation.setEndValue(1.0)
+        animation.setDuration(int(HOVER_MS))
+        animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+
+        def tick(value) -> None:
+            factor = float(value)
+            self._hover_values = {
+                index: start[index] + (target[index] - start[index]) * factor
+                for index in start
+            }
+            self.update()
+
+        animation.valueChanged.connect(tick)
+        animation.finished.connect(lambda: self._hover_values.update(target))
+        self._hover_anim = animation
+        animation.start()
+
+    def _animate_capsule(self, target: float) -> None:
+        animation = QVariantAnimation(self)
+        animation.setStartValue(float(self._capsule_t))
+        animation.setEndValue(float(target))
+        duration = CAPSULE_MS if target > self._capsule_t else CAPSULE_FADE_MS
+        animation.setDuration(int(duration))
+        animation.setEasingCurve(QEasingCurve.Type.Linear)
+        animation.valueChanged.connect(self._on_capsule_tick)
+        self._capsule_anim = animation
+        animation.start()
+
+    def _on_capsule_tick(self, value) -> None:
+        self._capsule_t = _clamp01(float(value))
+        self.update()
+
+    def _animate_depart(self, finished) -> None:
+        animation = QVariantAnimation(self)
+        animation.setStartValue(float(self._depart))
+        animation.setEndValue(1.0)
+        animation.setDuration(int(DEPART_MS))
+        animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+        animation.valueChanged.connect(self._on_depart_tick)
+        animation.finished.connect(finished)
+        self._depart_anim = animation
+        animation.start()
+
+    def _on_depart_tick(self, value) -> None:
+        self._depart = _clamp01(float(value))
+        self.update()
+
+    # -- appearance hooks ------------------------------------------------
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        self._dark = theme.is_dark()
+        self._material = None
+        self._capture_backdrop()
+        if self._items and self._appear_total <= 0.0:
+            self.play_appearance()
+
+    def moveEvent(self, event) -> None:
+        super().moveEvent(event)
+        self._capture_backdrop()
+
+    def _capture_backdrop(self) -> None:
+        """Re-grab only when the wheel moved or the throttle expired.
+
+        Mirrors :class:`HudBackdrop`'s own throttle so the material composite
+        is not rebuilt for every move event during a drag.
+        """
+        rect = self.frameGeometry()
+        now = time.monotonic()
+        if rect == self._capture_rect and (now - self._capture_stamp) < 0.25:
+            return
+        self._capture_rect = rect
+        self._capture_stamp = now
+        self._material = None
+        self._backdrop.capture(rect)
+
+    def _on_theme_change(self, dark: bool) -> None:
+        self._dark = bool(dark)
+        self._material = None
+        self.update()
+
+    # -- painting --------------------------------------------------------
+
+    def _paint_rect(self) -> QRectF:
+        return QRectF(0.0, 0.0, float(self.width()), float(self.height()))
+
+    def _material_image(self) -> QImage | None:
+        """Cache of "blurred desktop + theme wash" for the petals and hub."""
+        if self._material is not None:
+            return self._material
+        ratio = float(self.devicePixelRatioF() or 1.0)
+        image = QImage(
+            max(2, int(round(self.width() * ratio))),
+            max(2, int(round(self.height() * ratio))),
+            QImage.Format.Format_ARGB32_Premultiplied,
+        )
+        if image.isNull():
+            return None
+        image.setDevicePixelRatio(ratio)
+        image.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(image)
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
+        wash = theme.qcolor(theme.hud(self._dark)["wash"])
+        self._backdrop.paint(painter, self._paint_rect(), wash, 0.0)
+        painter.end()
+        self._material = image
+        return image
+
+    def _appear_progress(self, index: int) -> float:
+        if self._appear_total <= 0.0:
+            return 1.0
+        local = (self._appear_ms - index * APPEAR_STAGGER_MS) / APPEAR_MS
+        return _clamp01(local)
+
+    def _global_appear(self) -> float:
+        if self._appear_total <= 0.0:
+            return 1.0
+        return _clamp01(self._appear_ms / APPEAR_MS)
+
+    def _hover_value(self, index: int) -> float:
+        return _clamp01(float(self._hover_values.get(index, 0.0)))
+
+    def _fonts(self) -> tuple[QFont, QFont, QFont]:
+        if self._convert_font is None:
+            convert = QFont(self.font())
+            convert.setPixelSize(CONVERT_LABEL_SIZE)
+            convert.setWeight(QFont.Weight.Bold)
+            convert.setLetterSpacing(QFont.SpacingType.PercentageSpacing, 108.0)
+            self._convert_font = convert
+        if self._tool_font is None:
+            tool = QFont(self.font())
+            tool.setPixelSize(TOOL_LABEL_SIZE)
+            tool.setWeight(QFont.Weight.DemiBold)
+            tool.setLetterSpacing(QFont.SpacingType.PercentageSpacing, 105.0)
+            self._tool_font = tool
+        if self._capsule_font is None:
+            capsule = QFont(self.font())
+            capsule.setPixelSize(10)
+            capsule.setWeight(QFont.Weight.Bold)
+            capsule.setLetterSpacing(QFont.SpacingType.PercentageSpacing, 108.0)
+            self._capsule_font = capsule
+        return self._convert_font, self._tool_font, self._capsule_font
 
     def paintEvent(self, event) -> None:
+        count = len(self._items)
+        if count == 0:
+            return
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        palette = theme.palette(self._dark)
-        solid = str(settings.get("conversionFanTheme", "glass")).lower() == "solid"
-        cx = self.width() / 2.0
-        cy = self.height() / 2.0
-
-        if solid:
-            painter.setPen(QPen(QColor(palette["border"]), 1.5))
-            painter.setBrush(QColor(palette["card"]))
-            painter.drawEllipse(QPointF(cx, cy), EXTENT, EXTENT)
-        else:
-            gradient = QRadialGradient(cx, cy, EXTENT)
-            glass = palette["glass"]
-            gradient.setColorAt(0.0, QColor(*glass))
-            gradient.setColorAt(0.78, QColor(*glass))
-            gradient.setColorAt(1.0, QColor(glass[0], glass[1], glass[2], 0))
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(gradient)
-            painter.drawEllipse(QPointF(cx, cy), EXTENT, EXTENT)
-
-            edge = palette["glass_edge"]
-            painter.setBrush(Qt.BrushStyle.NoBrush)
-            painter.setPen(QPen(QColor(*edge), 1.2))
-            rim = theme.FAN_PETAL_RADIUS + PETAL_H / 2.0 + 18
-            painter.drawEllipse(QPointF(cx, cy), rim, rim)
-
-        count = len(self._items)
-        step = 360.0 / count if count else 360.0
+        painter.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
+        center = QPointF(self.width() / 2.0, self.height() / 2.0)
+        tokens = theme.hud(self._dark)
+        self._paint_halo(painter, center, tokens)
+        step = 360.0 / count
         for index, item in enumerate(self._items):
-            angle = -90.0 + (index + 0.5) * step
-            radians = math.radians(angle)
-            lift = theme.FAN_HOVER_LIFT if index == self._hover else 0.0
-            px = cx + math.cos(radians) * (theme.FAN_PETAL_RADIUS + lift)
-            py = cy + math.sin(radians) * (theme.FAN_PETAL_RADIUS + lift)
-            hovered = index == self._hover
+            self._paint_petal(painter, center, index, item, step, tokens)
+        self._paint_hub(painter, center, tokens)
+        self._paint_capsule(painter, center, tokens)
+        painter.end()
 
-            shape = QPainterPath()
-            shape.addRoundedRect(
-                QRectF(-PETAL_W / 2.0, -PETAL_H / 2.0, PETAL_W, PETAL_H),
-                PETAL_W * 0.42,
-                PETAL_W * 0.42,
+    def _paint_halo(self, painter: QPainter, center: QPointF, tokens: dict) -> None:
+        alpha = _ease_out(self._global_appear()) * (1.0 - self._depart)
+        if alpha <= 0.02:
+            return
+        base = theme.qcolor(tokens["halo"])
+        fade = QColor(base)
+        fade.setAlpha(0)
+        gradient = QRadialGradient(center, HALO_R)
+        gradient.setColorAt(0.0, base)
+        gradient.setColorAt(0.86, base)
+        gradient.setColorAt(1.0, fade)
+        painter.save()
+        painter.setOpacity(alpha)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(gradient)
+        painter.drawEllipse(center, HALO_R, HALO_R)
+        painter.restore()
+
+    def _paint_petal(
+        self,
+        painter: QPainter,
+        center: QPointF,
+        index: int,
+        item: FanItem,
+        step: float,
+        tokens: dict,
+    ) -> None:
+        progress = self._appear_progress(index)
+        if progress <= 0.0:
+            return
+        grow = _ease_out_back(progress)
+        scale = (APPEAR_SCALE + (1.0 - APPEAR_SCALE) * grow) * (
+            1.0 - (1.0 - DEPART_SCALE) * self._depart
+        )
+        alpha = min(1.0, progress * 1.6) * (1.0 - self._depart)
+        if alpha <= 0.02:
+            return
+        hover = self._hover_value(index)
+        angle = -90.0 + (index + 0.5) * step
+        half = step / 2.0 - GAP_DEG / 2.0
+        lift = HOVER_LIFT * hover
+        radius_in = R_IN * scale + lift
+        radius_out = R_OUT * scale + lift
+        corner = max(6.0, CORNER_R * scale)
+        path = _wedge_path(radius_in, radius_out, angle - half, angle + half, corner)
+        path.translate(center.x(), center.y())
+
+        painter.save()
+        painter.setOpacity(alpha)
+        painter.setClipPath(path)
+        material = self._material_image()
+        if material is not None:
+            painter.drawImage(self._paint_rect(), material)
+        if hover > 0.01:
+            painter.setOpacity(alpha * hover)
+            painter.fillPath(path, theme.qcolor(theme.ACCENT))
+        painter.restore()
+
+        base_ink = theme.qcolor(tokens["icon"])
+        ink = _mix(base_ink, theme.qcolor(HOVER_INK), hover)
+        painter.save()
+        painter.setOpacity(alpha)
+        if item.kind == "tool":
+            self._paint_tool_content(
+                painter, center, angle, radius_in, radius_out, item, ink, step, scale
             )
-            transform = QTransform()
-            transform.translate(px, py)
-            transform.rotate(angle + 90.0)
-            mapped = transform.map(shape)
-
-            shadow = QTransform()
-            shadow.translate(px + 2.0, py + 3.5)
-            shadow.rotate(angle + 90.0)
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(QColor(0, 0, 0, 56 if self._dark else 30))
-            painter.drawPath(shadow.map(shape))
-
-            if solid:
-                painter.setPen(QPen(QColor(theme.ACCENT_DARK), 1.2))
-                painter.setBrush(
-                    QColor(theme.ACCENT_BRIGHT if hovered else theme.ACCENT)
-                )
-            else:
-                painter.setPen(
-                    QPen(
-                        QColor(theme.ACCENT_DARK) if hovered else QColor(*palette["petal_edge"]),
-                        1.2,
-                    )
-                )
-                painter.setBrush(
-                    QColor(theme.ACCENT) if hovered else QColor(*palette["petal"])
-                )
-            painter.drawPath(mapped)
-
-            icon_font = QFont(self.font())
-            icon_font.setFamilies(["Segoe UI Emoji", self.font().family()])
-            icon_font.setPixelSize(22)
-            painter.setFont(icon_font)
-            painter.setPen(
-                QColor("#FFFFFF") if (solid or hovered) else QColor(theme.ACCENT)
-            )
-            painter.drawText(
-                QRectF(px - PETAL_W / 2.0, py - 36, PETAL_W, 28),
-                int(
-                    Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter
-                ),
-                item.icon or icon_for(item.key),
-            )
-
-            label_font = QFont(self.font())
-            label_font.setPixelSize(10)
-            label_font.setWeight(QFont.Weight.DemiBold)
-            painter.setFont(label_font)
-            painter.setPen(
-                QColor("#FFFFFF") if (solid or hovered) else QColor(palette["petal_text"])
-            )
-            lines = self._wrap(item.label, PETAL_W - 10, label_font)
-            line_height = 12.5
-            start_y = py + 0.5
-            for line_index, line in enumerate(lines):
-                painter.drawText(
-                    QRectF(px - PETAL_W / 2.0, start_y + line_index * line_height, PETAL_W, line_height),
-                    int(
-                        Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter
-                    ),
-                    line,
-                )
-
-        hovered_item = self._items[self._hover] if 0 <= self._hover < count else None
-        main_text = hovered_item.label if hovered_item else self._prompt[0]
-        sub_text = self._prompt[1]
-
-        if solid:
-            painter.setPen(QPen(QColor(palette["border"]), 1.2))
-            painter.setBrush(QColor(palette["card_alt"]))
         else:
-            painter.setPen(QPen(QColor(*palette["petal_edge"]), 1.0))
-            painter.setBrush(QColor(*palette["glass"]))
-        painter.drawEllipse(
-            QPointF(cx, cy), theme.FAN_CENTER_RADIUS, theme.FAN_CENTER_RADIUS
+            self._paint_conversion_content(
+                painter, center, angle, radius_in, radius_out, item, ink, step, scale
+            )
+        painter.restore()
+
+    def _radial_point(
+        self, center: QPointF, angle: float, radius: float
+    ) -> QPointF:
+        radians = math.radians(angle)
+        return QPointF(
+            center.x() + math.cos(radians) * radius,
+            center.y() + math.sin(radians) * radius,
         )
 
-        main_font = QFont(self.font())
-        main_font.setPixelSize(13)
-        main_font.setWeight(QFont.Weight.DemiBold)
-        painter.setFont(main_font)
-        painter.setPen(
-            QColor(theme.ACCENT) if hovered_item else QColor(palette["text"])
+    @staticmethod
+    def _chord(radius: float, half_angle: float) -> float:
+        return 2.0 * radius * math.sin(math.radians(max(0.0, half_angle)))
+
+    @staticmethod
+    def _scaled_font(font: QFont, factor: float) -> QFont:
+        """A copy of *font* at *factor* size (petal bloom zoom)."""
+        if abs(factor - 1.0) < 0.02:
+            return font
+        scaled = QFont(font)
+        scaled.setPixelSize(max(6, int(round(font.pixelSize() * factor))))
+        return scaled
+
+    def _paint_conversion_content(
+        self,
+        painter: QPainter,
+        center: QPointF,
+        angle: float,
+        radius_in: float,
+        radius_out: float,
+        item: FanItem,
+        ink: QColor,
+        step: float,
+        scale: float = 1.0,
+    ) -> None:
+        font, _, _ = self._fonts()
+        font = self._scaled_font(font, max(0.62, min(1.0, scale)))
+        radius = radius_in + (radius_out - radius_in) * 0.52
+        point = self._radial_point(center, angle, radius)
+        half = step / 2.0 - GAP_DEG / 2.0
+        width = max(24.0, self._chord(radius, half) * 0.92)
+        line = max(18.0, font.pixelSize() * 1.35)
+        painter.setFont(font)
+        painter.setPen(ink)
+        painter.drawText(
+            QRectF(point.x() - width / 2.0, point.y() - line / 2.0, width, line),
+            int(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter),
+            item.label.upper(),
         )
-        main_lines = self._wrap(main_text, theme.FAN_CENTER_RADIUS * 2 - 12, main_font)
-        offset = -7 if sub_text else 0
-        for line_index, line in enumerate(main_lines[:2]):
+
+    def _paint_tool_content(
+        self,
+        painter: QPainter,
+        center: QPointF,
+        angle: float,
+        radius_in: float,
+        radius_out: float,
+        item: FanItem,
+        ink: QColor,
+        step: float,
+        scale: float = 1.0,
+    ) -> None:
+        _, font, _ = self._fonts()
+        factor = max(0.55, min(1.0, scale))
+        half = step / 2.0 - GAP_DEG / 2.0
+        anchor_radius = (radius_in + radius_out) / 2.0
+        anchor = self._radial_point(center, angle, anchor_radius)
+        icon_size = ICON_SIZE * factor
+        width = max(24.0, self._chord(anchor_radius, half) * 0.86)
+        label_font = self._scaled_font(font, factor)
+        text = item.label.upper()
+        metrics = QFontMetricsF(label_font)
+        lines = self._wrap(metrics, text, width, 2)
+        widest = max(metrics.horizontalAdvance(line) for line in lines)
+        if widest > width and label_font.pixelSize() > 7:  # one shrink step, then wrap
+            label_font = self._scaled_font(label_font, max(0.62, width / widest))
+            metrics = QFontMetricsF(label_font)
+            lines = self._wrap(metrics, text, width, 2)
+        line_height = max(11.0, label_font.pixelSize() * 1.25)
+        block = icon_size + ICON_LABEL_GAP + line_height * len(lines)
+        top = anchor.y() - block / 2.0
+        paint_icon(
+            painter,
+            item.key,
+            QRectF(
+                anchor.x() - icon_size / 2.0,
+                top,
+                icon_size,
+                icon_size,
+            ),
+            ink,
+            2.0,
+        )
+        painter.setFont(label_font)
+        painter.setPen(ink)
+        label_top = top + icon_size + ICON_LABEL_GAP
+        for index, line in enumerate(lines):
             painter.drawText(
-                QRectF(cx - theme.FAN_CENTER_RADIUS, cy + offset - 16 + line_index * 14, theme.FAN_CENTER_RADIUS * 2, 14),
+                QRectF(
+                    anchor.x() - width / 2.0,
+                    label_top + index * line_height,
+                    width,
+                    line_height,
+                ),
                 int(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter),
                 line,
             )
-        if sub_text:
-            sub_font = QFont(self.font())
-            sub_font.setPixelSize(10)
-            painter.setFont(sub_font)
-            painter.setPen(QColor(palette["text_dim"]))
-            sub_lines = self._wrap(sub_text, theme.FAN_CENTER_RADIUS * 2 - 14, sub_font)
-            painter.drawText(
-                QRectF(cx - theme.FAN_CENTER_RADIUS, cy + 8, theme.FAN_CENTER_RADIUS * 2, 13),
-                int(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter),
-                sub_lines[0] if sub_lines else "",
-            )
-        painter.end()
 
-    def _wrap(self, text: str, width: float, font: QFont) -> list[str]:
-        metrics = QFontMetricsF(font)
+    @staticmethod
+    def _wrap(metrics: QFontMetricsF, text: str, width: float, limit: int) -> list[str]:
         words = str(text).split()
         if not words:
-            return []
+            return [""]
         lines: list[str] = []
         current = ""
         for word in words:
@@ -385,10 +883,66 @@ class TangerineWheel(QWidget):
                 current = word
         if current:
             lines.append(current)
-        if len(lines) > 2:
-            lines = lines[:2]
-            last = lines[1]
-            while last and metrics.horizontalAdvance(last + "\u2026") > width:
-                last = last[:-1]
-            lines[1] = last + "\u2026"
+        if len(lines) > limit:
+            lines = lines[:limit]
+            lines[-1] = lines[-1] + "\u2026"
         return lines
+
+    def _paint_hub(self, painter: QPainter, center: QPointF, tokens: dict) -> None:
+        grow = _ease_out(self._global_appear())
+        alpha = grow * (1.0 - self._depart)
+        if alpha <= 0.02:
+            return
+        radius = HUB_R * (0.72 + 0.28 * grow) * (
+            1.0 - (1.0 - DEPART_SCALE) * self._depart
+        )
+        path = QPainterPath()
+        path.addEllipse(center, radius, radius)
+        painter.save()
+        painter.setOpacity(alpha)
+        painter.setClipPath(path)
+        material = self._material_image()
+        if material is not None:
+            painter.drawImage(self._paint_rect(), material)
+        # The hub token is a near-opaque white meant for the capsule; on the
+        # disc it is thinned out so the frosted material keeps showing through
+        # (the reference hub is translucent, not a white hole).
+        veil = theme.qcolor(tokens["hub"])
+        veil.setAlpha(int(round(veil.alpha() * HUB_VEIL)))
+        painter.fillPath(path, veil)
+        painter.restore()
+
+    def _paint_capsule(self, painter: QPainter, center: QPointF, tokens: dict) -> None:
+        if self._capsule_t <= 0.01 or not self._capsule_label:
+            return
+        alpha = min(1.0, self._capsule_t * 1.8) * (1.0 - self._depart)
+        if alpha <= 0.02:
+            return
+        _, _, font = self._fonts()
+        text = self._capsule_label.upper()
+        width = max(
+            CAPSULE_MIN_W,
+            QFontMetricsF(font).horizontalAdvance(text) + 30.0,
+        )
+        offset = _ease_out(self._capsule_t)
+        origin = QPointF(
+            center.x() + self._capsule_dir.x() * CAPSULE_SLIDE * (1.0 - offset),
+            center.y() + self._capsule_dir.y() * CAPSULE_SLIDE * (1.0 - offset),
+        )
+        rect = QRectF(
+            origin.x() - width / 2.0,
+            origin.y() - CAPSULE_H / 2.0,
+            width,
+            CAPSULE_H,
+        )
+        painter.save()
+        painter.setOpacity(alpha)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(0, 0, 0, 60 if self._dark else 26))
+        painter.drawRoundedRect(rect.translated(0.0, 2.0), CAPSULE_H / 2.0, CAPSULE_H / 2.0)
+        painter.setBrush(theme.qcolor(tokens["hub"]))
+        painter.drawRoundedRect(rect, CAPSULE_H / 2.0, CAPSULE_H / 2.0)
+        painter.setFont(font)
+        painter.setPen(theme.qcolor(tokens["icon"]))
+        painter.drawText(rect, int(Qt.AlignmentFlag.AlignCenter), text)
+        painter.restore()

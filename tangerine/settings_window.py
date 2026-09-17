@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
 
 from . import settings
 from .media import ffmpeg_path, ffprobe_path, rar_path, unrar_path
-from . import i18n, paths
+from . import i18n, paths, theme
 
 _WINDOW = None
 
@@ -152,12 +152,28 @@ class SettingsWindow(QWidget):
             self.language_combo.setCurrentIndex(index)
         self.language_combo.currentIndexChanged.connect(self._language_changed)
         form.addRow(i18n.tr("settings.language.label"), self.language_combo)
+
+        self.appearance_combo = QComboBox()
+        self.appearance_combo.addItem(i18n.tr("settings.appearance.system"), "system")
+        self.appearance_combo.addItem(i18n.tr("settings.appearance.light"), "light")
+        self.appearance_combo.addItem(i18n.tr("settings.appearance.dark"), "dark")
+        index = self.appearance_combo.findData(settings.appearance_theme())
+        if index >= 0:
+            self.appearance_combo.setCurrentIndex(index)
+        self.appearance_combo.currentIndexChanged.connect(
+            lambda _index: self._appearance_changed())
+        form.addRow(i18n.tr("settings.appearance.label"), self.appearance_combo)
         layout.addLayout(form)
 
         hint = QLabel(i18n.tr("settings.language.hint"))
         hint.setWordWrap(True)
         hint.setObjectName("dim")
         layout.addWidget(hint)
+
+        appearance_hint = QLabel(i18n.tr("settings.appearance.hint"))
+        appearance_hint.setWordWrap(True)
+        appearance_hint.setObjectName("dim")
+        layout.addWidget(appearance_hint)
         layout.addStretch(1)
         return page
 
@@ -165,6 +181,11 @@ class SettingsWindow(QWidget):
         code = self.language_combo.currentData()
         if code:
             i18n.set_language(str(code))
+
+    def _appearance_changed(self):
+        settings.set("appearanceTheme", str(self.appearance_combo.currentData()))
+        settings.save()
+        theme.apply_app_theme()
 
     def _wheels_tab(self):
         page = QWidget()
@@ -192,15 +213,6 @@ class SettingsWindow(QWidget):
 
         sounds.toggled.connect(_toggle_sound)
         layout.addWidget(sounds)
-
-        theme_row = _make_row(
-            i18n.tr("settings.wheels.fan_theme"), "conversionFanTheme",
-            [
-                ("glass", i18n.tr("settings.wheels.theme.glass")),
-                ("solid", i18n.tr("settings.wheels.theme.solid")),
-            ],
-        )
-        layout.addWidget(theme_row)
 
         hint = QLabel(i18n.tr("settings.wheels.hint"))
         hint.setObjectName("dim")
@@ -328,6 +340,8 @@ class SettingsWindow(QWidget):
             if checks is not None:
                 checks._load()
         self._sync_language_combo()
+        self._sync_appearance_combo()
+        theme.apply_app_theme()
         QMessageBox.information(
             self, i18n.tr("app.name"), i18n.tr("settings.restore.done"))
 
@@ -342,6 +356,16 @@ class SettingsWindow(QWidget):
             combo.setCurrentIndex(index)
             combo.blockSignals(False)
         i18n.set_language(current)
+
+    def _sync_appearance_combo(self):
+        combo = getattr(self, "appearance_combo", None)
+        if combo is None:
+            return
+        index = combo.findData(settings.appearance_theme())
+        if index >= 0 and index != combo.currentIndex():
+            combo.blockSignals(True)
+            combo.setCurrentIndex(index)
+            combo.blockSignals(False)
 
 
 def open_settings(parent=None):

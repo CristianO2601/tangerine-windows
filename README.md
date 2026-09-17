@@ -30,7 +30,31 @@ drop itself is copy-only.
 
 ![Tangerine conversion wheel in light mode](docs/images/wheel-light.png)
 
-The wheel follows the Windows dark/light theme.
+The wheel follows the Windows theme by default, and can be forced to **Light**
+or **Dark** under **Settings → General → Appearance**.
+
+## Interface & appearance
+
+The wheel, the progress card and every editor window are drawn as translucent
+"material" surfaces: Tangerine captures the desktop behind the window, blurs
+it and lays a warm wash on top, so the HUD looks frosted without depending on
+OS blur effects. If the capture is unavailable the surface falls back to the
+wash alone.
+
+- **Wheel.** Petals are rounded wedges over a soft halo. Conversion mode shows
+  one large uppercase label per petal (no icons); tools mode shows a
+  monochrome line icon with a small label. The petal under the cursor turns
+  orange (~120 ms) while a central capsule slides in with the name of the
+  highlighted item. The wheel blooms in with a staggered animation (~250 ms)
+  and fades out in ~160 ms.
+- **Progress card.** Peach close chip, bold title ("Converting to MP4",
+  "Cropping video"...), the file name and a thin orange bar.
+- **Editor windows.** Their own header with the close chip, a centred title
+  and a hairline; orange sliders with a white thumb, peach chips and an orange
+  **Apply** button.
+- **Appearance.** **Settings → General → Appearance** offers **System**,
+  **Light** and **Dark** (stored as `appearanceTheme` in `settings.json`); the
+  change applies live to the wheel, the progress cards and the editors.
 
 ## Features
 
@@ -38,10 +62,11 @@ The wheel follows the Windows dark/light theme.
 
 | Family | Sources | Outputs |
 | --- | --- | --- |
-| Images | jpg/jpeg, png, webp, heic/heif, tiff/tif, bmp, svg | jpg, png, webp, heic, tiff, pdf, and docx (docx only from jpg/png) |
-| Audio | mp3, m4a, wav, flac | mp3, m4a, wav, flac (every target except the current format) |
-| Video | mp4, mov, mkv, avi, webm, m4v | mp4, mov, mkv, gif, and audio extraction to mp3/m4a |
-| GIF | gif | mp4, mov, mkv |
+| Images | jpg/jpeg, png, webp, avif, heic/heif, tiff/tif, bmp, svg | jpg, png, webp, avif, heic, tiff, pdf, and docx (docx only from jpg/png) |
+| Audio | mp3, m4a, wav, flac, ogg, opus, aiff/aif, wma | mp3, m4a, wav, flac, ogg, opus, aiff, wma (every target except the current format) |
+| Video | mp4, mov, mkv, avi, webm, wmv, m4v | mp4, mov, mkv, webm, avi, wmv, gif, and audio extraction to mp3/m4a |
+| GIF | gif | mp4, mov, mkv, webm, avi, wmv |
+| Subtitles | srt, vtt | srt ↔ vtt (the other format) and txt |
 | PDF | pdf | docx, jpg, png, txt |
 | TXT | txt | pdf, jpg, png |
 | Documents | docx, xlsx, pptx, csv, rtf, md, odt, epub | per source — see [Documents](#documents) below |
@@ -49,6 +74,14 @@ The wheel follows the Windows dark/light theme.
 
 Multi-file drops convert in batch. Several images can be merged into a single
 PDF or a collage; several PDFs merge into one; several videos can be joined.
+
+### Subtitles
+
+SRT and WebVTT files convert without any external engine: the encoding is
+detected tolerantly (BOM, UTF-8, CP1252) and the output is always UTF-8.
+**SRT ↔ VTT** keeps cue text and timings; both convert to **TXT** as a plain
+transcript (no timings). Converting to SRT drops WebVTT cue settings and cue
+identifiers.
 
 ### Documents
 
@@ -73,13 +106,17 @@ original bytes when the rebuilt container would not be smaller.
 
 The app ships **20 interactive editor dialogs** plus direct background jobs:
 
-- **Images:** Compress · Metadata · Edit Photo · Annotate Photo · Add
-  Background · Crop · Redact Photo (with face detection) · Create PDF · Create
-  Collage · Read QR Codes
+- **Images:** Compress · Metadata (view, edit or remove GPS location on
+  images) · Edit Photo (exposure, contrast, saturation, temperature,
+  vibrance, sharpness, vignette and grain, plus Mono/Sepia/Noir/Vivid/Warm/
+  Cool presets) · Annotate Photo · Add Background (solid colour, gradient with
+  angle, or an image; aspect ratio, margin and rounded corners) · Crop ·
+  Redact Photo (solid, blur or 12 px pixelate, with face detection) · Create
+  PDF · Create Collage · Read QR Codes
 - **Audio:** Compress · Metadata · Normalize Volume · Audio Visualizer · Trim
   (waveform) · Convert Audio Channels · Bleep
 - **Video:** Compress · Metadata · Remove Audio · Trim · Crop · Change Speed ·
-  Snapshots · Split · Redact · Join
+  Snapshots · Split · Redact (solid, blur or pixelate) · Join
 - **PDF:** Compress · Metadata · Split · Merge into one PDF · Read QR Codes
 - **GIF:** Metadata · Read QR Codes
 - **TXT:** Compress (tidy whitespace and blank lines)
@@ -123,6 +160,14 @@ app shows a tray balloon explaining the Shift / Alt+Shift gestures.
    cursor over a petal and release the files.
 4. Dropping away from every petal cancels and hides the wheel.
 
+While the wheel is visible the keyboard also works: **←/↑** and **→/↓** move
+between petals (wrapping around), **Enter** applies the highlighted one and
+**Escape** cancels. In File Explorer, **Shift+Enter** with files selected opens
+the wheel at the cursor for that selection — no dragging needed. An optional
+long-press touch mode (`touchLongPressEnabled`, off by default) shows the
+conversion wheel when a file drag is held for ~700 ms with no modifier
+pressed.
+
 Sources are never touched: outputs are new files named beside the original
 (`photo 2.jpg`, `clip Cropped.mp4`, `Photo Collage.png`, and so on), and the
 drop action is always a copy.
@@ -133,6 +178,8 @@ Right-click the tray icon → **Settings...** (double-clicking the tray icon
 opens it too). From there you can:
 
 - Remap the conversion and tools modifier combinations.
+- Choose the HUD appearance (System/Light/Dark) and enable the optional
+  long-press touch mode.
 - Toggle sound/haptic feedback and pick the fan theme.
 - Set default compression presets and sizes for images, video, and audio.
 - Search conversion defaults, open the settings folder, or restore defaults.
@@ -181,6 +228,11 @@ catalog routes to a real editor/job without falling back to a "not available"
 message box, and the settings file survives an atomic save/load round-trip and
 a corrupt-file recovery.
 
+The v1.7.0 verification run is fully green: **120 tests**, a tool-routing audit
+of **43/43** identifiers without fallbacks, **23/23** editor smoke dialogs,
+**11/11** copy-regression checks, **50/50** end-to-end conversion/tool cases
+and **38/38** document routes.
+
 ## Known limitations
 
 - **Windows 11 only.** The drag detection uses Win32/OLE APIs and is not
@@ -209,6 +261,9 @@ a corrupt-file recovery.
   interactive editors can use a lot of memory.
 - **FFmpeg-dependent behavior.** Audio/video codec availability and edge-case
   format support depend on the installed FFmpeg build.
+- **Subtitle conversion is text-level.** Cue text and timings are preserved,
+  but converting to SRT drops WebVTT cue settings, and TXT keeps only the
+  transcript (no timings).
 - **Files only.** Folders cannot be dropped onto the wheel.
 
 ## Repository layout
@@ -248,7 +303,20 @@ archivos desde el Explorador manteniendo **Shift** y aparece una rueda radial
 bajo el cursor; suelta sobre un pétalo para convertir. Con **Alt+Shift**
 aparecen las herramientas (comprimir, recortar, censurar, collage, metadatos,
 leer códigos QR, etc.). Los archivos originales nunca se modifican: todo se
-guarda como copia con un nombre nuevo en la misma carpeta.
+guarda como copia con un nombre nuevo en la misma carpeta. El HUD (rueda,
+tarjeta de progreso y ventanas de editor) usa superficies translúcidas de
+"material"; su aspecto se elige en **Ajustes → General → Apariencia**
+(Sistema/Claro/Oscuro). Con la rueda visible funcionan las flechas, **Enter**
+y **Escape**; en el Explorador, **Shift+Enter** abre la rueda para la selección
+actual, y hay un modo táctil opcional de pulsación larga (desactivado por
+defecto).
+
+Además de los formatos clásicos, v1.7.0 añade AVIF (imagen), OGG/Opus/AIFF/WMA
+(audio), WebM/AVI/WMV (vídeo) y la familia de subtítulos SRT↔VTT→TXT; las
+herramientas ganan pixelado en Censurar foto/vídeo, Añadir fondo completo
+(color/degradado/imagen, aspecto, margen y esquinas redondeadas), Editar foto
+completo (exposición, temperatura, vibrance, viñeta, grano y presets) y
+metadatos GPS de imagen (ver, editar o quitar ubicación).
 
 Es una reimplementación independiente para Windows de la *idea* de conversión
 por arrastre de la app macOS Tangerine (de thmmhnsn), **sin afiliación** con
@@ -265,6 +333,7 @@ nombre y la idea pertenecen a los autores originales. Limitaciones honestas:
 solo Windows 11, sin instalador ni firma digital, sin actualización automática,
 OCR opcional para PDF escaneados (`pip install -r requirements-ocr.txt`),
 conversiones de documentos a nivel de texto (sin fidelidad de maquetación
-compleja y sin formatos binarios antiguos `.doc`/`.xls`/`.ppt`), interfaz en
-inglés o español (Ajustes → General; opción Sistema), y el visualizador de
-audio necesita una pista de audio.
+compleja y sin formatos binarios antiguos `.doc`/`.xls`/`.ppt`), subtítulos
+también a nivel de texto (se pierden los ajustes de cue de WebVTT al pasar a
+SRT), interfaz en inglés o español (Ajustes → General; opción Sistema), y el
+visualizador de audio necesita una pista de audio.

@@ -215,6 +215,7 @@ class RedactCanvas(ImageCanvas):
         super().__init__(path, parent)
         self.boxes: list[dict] = []
         self.selected = -1
+        self.mode = "solid"
         self._drag = None
         self._start = (0.0, 0.0)
         self.changed = None
@@ -268,7 +269,10 @@ class RedactCanvas(ImageCanvas):
             rect = QRectF(top_left, bottom_right)
             fill = QColor(box.get("color", "#000000"))
             fill.setAlpha(150)
-            painter.fillRect(rect, fill)
+            if self.mode == "pixelate":
+                self._paint_mosaic(painter, rect, fill)
+            else:
+                painter.fillRect(rect, fill)
             if index == self.selected:
                 painter.setPen(QPen(QColor("#FFFFFF"), 2.0))
             else:
@@ -276,6 +280,27 @@ class RedactCanvas(ImageCanvas):
             painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.drawRect(rect)
         painter.end()
+
+    @staticmethod
+    def _paint_mosaic(painter: QPainter, rect: QRectF, fill: QColor) -> None:
+        step = 10.0
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(fill)
+        row = 0
+        y = rect.top()
+        while y < rect.bottom():
+            column = 0
+            x = rect.left()
+            while x < rect.right():
+                if (row + column) % 2 == 0:
+                    painter.drawRect(QRectF(
+                        x, y,
+                        min(step, rect.right() - x),
+                        min(step, rect.bottom() - y)))
+                x += step
+                column += 1
+            y += step
+            row += 1
 
 
 class AnnotateCanvas(ImageCanvas):

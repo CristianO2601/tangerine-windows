@@ -5,6 +5,7 @@ from __future__ import annotations
 import gzip
 import io
 import os
+import re
 import shutil
 import subprocess
 import tarfile
@@ -20,8 +21,8 @@ from PIL import Image, ImageOps
 from . import i18n, naming
 from .catalog import (
     AUDIO_EXTS, FAMILY_ARCHIVE, FAMILY_AUDIO, FAMILY_DOC, FAMILY_GIF,
-    FAMILY_IMAGE, FAMILY_PDF, FAMILY_TXT, FAMILY_VIDEO, GIF_EXTS, PDF_EXTS,
-    RASTER_EXTS, SVG_EXTS, TXT_EXTS, ARCHIVE_EXTS, family_of,
+    FAMILY_IMAGE, FAMILY_PDF, FAMILY_SUB, FAMILY_TXT, FAMILY_VIDEO, GIF_EXTS,
+    PDF_EXTS, RASTER_EXTS, SVG_EXTS, TXT_EXTS, ARCHIVE_EXTS, family_of,
 )
 from .media import (
     CREATE_NO_WINDOW, MediaInfo, ffmpeg_path, probe, run_ffmpeg, run_process,
@@ -145,6 +146,9 @@ def _image_save_args(target: str, img: Image.Image, source: Path) -> tuple[dict,
     elif target == "heic":
         fmt = "HEIF"
         kwargs["quality"] = 90
+    elif target == "avif":
+        fmt = "AVIF"
+        kwargs["quality"] = 80
     elif target == "tiff":
         fmt = "TIFF"
         kwargs["compression"] = "tiff_lzw"
@@ -175,8 +179,11 @@ def convert_image(path: Path, target: str, ctx: Ctx, reserved: set[Path]) -> Pat
 
     if target in ("jpg",):
         img = _flatten(img)
+    elif target == "avif" and img.mode not in ("RGB", "RGBA"):
+        # pillow-heif writes RGB/RGBA AVIF; flatten palettes and odd modes.
+        img = _flatten(img)
     kwargs, fmt = _image_save_args(target, img, path)
-    if exif and fmt in ("JPEG", "TIFF", "WEBP"):
+    if exif and fmt in ("JPEG", "TIFF", "WEBP", "AVIF"):
         kwargs["exif"] = exif
     try:
         if fmt == "JPEG" and img.mode not in ("RGB", "L"):
@@ -254,6 +261,27 @@ CODEC_ARGS = {
     "m4a": ["-c:a", "aac", "-b:a", "192k"],
     "wav": ["-c:a", "pcm_s16le"],
     "flac": ["-c:a", "flac", "-compression_level", "6"],
+    "ogg": ["-c:a", "libvorbis", "-q:a", "5"],
+    "opus": ["-c:a", "libopus", "-b:a", "128k"],
+    "aiff": ["-c:a", "pcm_s16be"],
+    "wma": ["-c:a", "wmav2", "-b:a", "192k"],
+}
+
+#: Video-stream encoders for the containers that are not H.264 + AAC (WebM,
+#: AVI, WMV); ``convert_video`` and ``convert_gif`` share them.
+_VIDEO_STREAM_ARGS = {
+    # VP9 is the slowest encoder of the set: -cpu-used 4 keeps WebM usable.
+    "webm": ["-c:v", "libvpx-vp9", "-crf", "32", "-b:v", "0",
+             "-deadline", "good", "-cpu-used", "4", "-pix_fmt", "yuv420p"],
+    "avi": ["-c:v", "mpeg4", "-q:v", "4"],
+    "wmv": ["-c:v", "wmv2", "-q:v", "4"],
+}
+
+#: Audio-stream encoders pairing with :data:`_VIDEO_STREAM_ARGS`.
+_VIDEO_TARGET_AUDIO_ARGS = {
+    "webm": ["-c:a", "libopus", "-b:a", "128k"],
+    "avi": ["-c:a", "libmp3lame", "-q:a", "4"],
+    "wmv": ["-c:a", "wmav2", "-b:a", "192k"],
 }
 
 
@@ -274,6 +302,13 @@ _EVEN_SCALE = "scale=trunc(iw/2)*2:trunc(ih/2)*2"
 
 
 def convert_video(path: Path, target: str, ctx: Ctx, reserved: set[Path]) -> Path:
+    """Transcode *path* into the video/audio container *target*.
+
+    Video streams are always rescaled to even dimensions.  Besides the H.264
+    targets, WebM re-encodes with VP9 + Opus (VP9 is the slowest encoder here,
+    so ``-deadline good -cpu-used 4`` trades quality for usability), AVI uses
+    MPEG-4 part 2 + MP3 and WMV uses WMV2 + WMAv2.
+    """
     verify_writable(path)
     info = probe(path)
     out_path = _unique(path.parent, path.stem, f".{target}", reserved)
@@ -304,6 +339,12 @@ def convert_video(path: Path, target: str, ctx: Ctx, reserved: set[Path]) -> Pat
             args += ["-c:a", "copy"]
         else:
             args += ["-c:a", "aac", "-b:a", "192k"]
+    elif target in _VIDEO_STREAM_ARGS:
+        args += [
+            "-vf", _EVEN_SCALE,
+            *_VIDEO_STREAM_ARGS[target],
+            *_VIDEO_TARGET_AUDIO_ARGS[target],
+        ]
     elif target == "gif":
         args += ["-vf", _gif_filter(), "-loop", "0"]
     elif target in ("mp3", "m4a"):
@@ -335,6 +376,8 @@ def convert_gif(path: Path, target: str, ctx: Ctx, reserved: set[Path]) -> Path:
     elif target == "mov":
         args += ["-vf", _EVEN_SCALE, "-c:v", "libx264", "-crf", "20", "-preset", "veryfast",
                  "-pix_fmt", "yuv420p", "-an"]
+    elif target in _VIDEO_STREAM_ARGS:
+        args += ["-vf", _EVEN_SCALE, *_VIDEO_STREAM_ARGS[target], "-an"]
     else:
         args += ["-vf", _EVEN_SCALE, "-c:v", "libx264", "-crf", "20", "-preset", "veryfast",
                  "-pix_fmt", "yuv420p"]
@@ -773,6 +816,118 @@ def convert_txt(path: Path, target: str, ctx: Ctx, reserved: set[Path]) -> list[
 
 
 # ---------------------------------------------------------------------------
+# Subtitles (SRT / WebVTT / plain text)
+# ---------------------------------------------------------------------------
+
+#: Encodings tried in order when reading a subtitle file.
+_SUBTITLE_ENCODINGS = ("utf-8-sig", "utf-8", "cp1252")
+_SUBTITLE_TIME = r"(?:\d{1,2}:)?\d{1,2}:\d{1,2}[,.]\d{1,3}"
+_SUBTITLE_CUE_RE = re.compile(
+    rf"^({_SUBTITLE_TIME})\s*-->\s*({_SUBTITLE_TIME})\s*(.*)$"
+)
+
+
+def _read_subtitle_text(path: Path) -> str:
+    """Decode subtitle bytes tolerantly (BOM, UTF-8, CP1252) and normalise CRLF."""
+    data = path.read_bytes()
+    for encoding in _SUBTITLE_ENCODINGS:
+        try:
+            text = data.decode(encoding)
+            break
+        except UnicodeDecodeError:
+            continue
+    else:
+        text = data.decode("utf-8", errors="replace")
+    return text.replace("\r\n", "\n").replace("\r", "\n")
+
+
+def _parse_subtitle_cues(text: str) -> list[tuple[str, str, str]]:
+    """Split subtitle text into ``(timestamp, settings, body)`` cues.
+
+    Index lines, VTT cue identifiers and the ``WEBVTT`` header are skipped, so
+    the same parser reads both SRT and WebVTT.
+    """
+    cues: list[tuple[str, str, str]] = []
+    lines = text.split("\n")
+    index = 0
+    while index < len(lines):
+        match = _SUBTITLE_CUE_RE.match(lines[index].strip())
+        if match is None:
+            index += 1
+            continue
+        start, end, settings = match.groups()
+        body: list[str] = []
+        index += 1
+        while index < len(lines) and lines[index].strip():
+            body.append(lines[index].strip().lstrip("\ufeff"))
+            index += 1
+        cues.append(
+            (f"{start} --> {end}", settings.strip(), "\n".join(body)))
+    return cues
+
+
+def _subtitle_timestamp(timestamp: str, separator: str) -> str:
+    """Rewrite a cue timestamp with *separator* (``,`` SRT, ``.`` WebVTT)."""
+    return timestamp.replace(",", separator).replace(".", separator)
+
+
+def _subtitle_to_vtt(text: str) -> str:
+    blocks = ["WEBVTT", ""]
+    for timestamp, settings, body in _parse_subtitle_cues(text):
+        line = _subtitle_timestamp(timestamp, ".")
+        blocks.append(f"{line} {settings}" if settings else line)
+        blocks.append(body)
+        blocks.append("")
+    return "\n".join(blocks).rstrip("\n") + "\n"
+
+
+def _subtitle_to_srt(text: str) -> str:
+    blocks: list[str] = []
+    for number, (timestamp, _settings, body) in enumerate(
+            _parse_subtitle_cues(text), start=1):
+        blocks += [str(number), _subtitle_timestamp(timestamp, ","), body, ""]
+    if not blocks:
+        return ""
+    return "\n".join(blocks).rstrip("\n") + "\n"
+
+
+def _subtitle_to_txt(text: str) -> str:
+    """Plain transcript: cue bodies only, blank runs collapsed to one line."""
+    lines: list[str] = []
+    for _timestamp, _settings, body in _parse_subtitle_cues(text):
+        for line in body.split("\n"):
+            line = line.strip()
+            if line or (lines and lines[-1]):
+                lines.append(line)
+    while lines and not lines[-1]:
+        lines.pop()
+    return "\n".join(lines) + "\n" if lines else ""
+
+
+def convert_subtitle(path: Path, target: str, ctx: Ctx, reserved: set[Path]) -> Path:
+    """Convert an SRT/WebVTT subtitle to VTT, SRT or plain text.
+
+    No external engine is involved; the encoding is detected tolerantly and the
+    output is always UTF-8.
+    """
+    verify_writable(path)
+    ctx.status(i18n.tr(
+        "action.converting_file_to", name=path.name, target=target.upper()))
+    writers = {
+        "vtt": _subtitle_to_vtt,
+        "srt": _subtitle_to_srt,
+        "txt": _subtitle_to_txt,
+    }
+    writer = writers.get(target)
+    if writer is None:
+        raise EngineError(i18n.tr("err.no_engine", name=path.name))
+    out_path = _unique(path.parent, path.stem, f".{target}", reserved)
+    out_path.write_text(writer(_read_subtitle_text(path)), "utf-8")
+    ctx.progress(1.0)
+    return out_path
+
+
+# ---------------------------------------------------------------------------
 # Archives
 # ---------------------------------------------------------------------------
 
@@ -976,6 +1131,8 @@ def convert_single(path: Path, target: str, ctx: Ctx, reserved: set[Path]) -> li
         return convert_pdf(path, target, ctx, reserved)
     if family == FAMILY_TXT:
         return convert_txt(path, target, ctx, reserved)
+    if family == FAMILY_SUB:
+        return [convert_subtitle(path, target, ctx, reserved)]
     if family == FAMILY_DOC:
         from . import documents
 

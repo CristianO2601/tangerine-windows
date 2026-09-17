@@ -1,5 +1,77 @@
 # Changelog
 
+## 1.7.0 — 2026-09-17
+
+Paridad visual con la app oficial: el HUD pasa a superficies translúcidas de
+"material" y la rueda, la tarjeta de progreso y los editores se rediseñan;
+además, formatos nuevos (AVIF, audio, vídeo y subtítulos), herramientas
+ampliadas (pixelado, fondo completo, edición de foto, GPS) y navegación por
+teclado.
+
+### Interfaz
+- **Superficies de material:** nuevo módulo `tangerine/hud.py` — captura del
+  escritorio tras cada superficie (`QScreen.grabWindow`), desenfoque y lavado
+  cálido; si la captura falla, queda solo el lavado. Aplicado a la rueda, la
+  tarjeta de progreso y las ventanas de editor.
+- **Rueda:** pétalos en cuña con esquinas redondeadas y halo; conversión = solo
+  etiqueta grande en mayúsculas (sin iconos); herramientas = icono de línea
+  monocromo + etiqueta; hover naranja ~120 ms con empuje; cápsula central que
+  entra deslizándose con el nombre del elemento señalado; aparición escalonada
+  (~254 ms) y despedida rápida (~160 ms); set de iconos vectoriales nuevo
+  (`icons.py`), sin emoji.
+- **Tarjeta de progreso:** chip de cierre melocotón, título en negrita,
+  nombre del archivo y barra fina naranja.
+- **Ventanas de editor:** cabecera propia (chip de cierre, título centrado y
+  hairline), sliders naranja con thumb blanco, chips melocotón y botón
+  **Apply** naranja.
+- **Tema de apariencia:** **Ajustes → General → Apariencia** =
+  Sistema/Claro/Oscuro (nuevo ajuste `appearanceTheme`, cambio en vivo).
+
+### Formatos
+- **Imagen:** AVIF como origen y destino (lectura y escritura con
+  pillow-heif).
+- **Audio:** OGG, Opus, AIFF y WMA como origen y destino (códecs vía FFmpeg).
+- **Vídeo:** WebM, AVI y WMV como destino (VP9+Opus, MPEG-4+MP3, WMV2+WMAv2)
+  y `.wmv` como origen.
+- **Subtítulos:** familia nueva con SRT↔VTT y ambos →TXT; sin motor externo,
+  decodificación tolerante (BOM/UTF-8/CP1252) y salida siempre UTF-8.
+
+### Herramientas
+- **Pixelado:** modo nuevo en Censurar foto y Censurar vídeo (mosaico de
+  12 px), además de sólido y desenfoque.
+- **Añadir fondo completo:** color, degradado con ángulo o imagen de fondo,
+  con relación de aspecto, margen y radio de esquinas.
+- **Editar foto completo:** exposición, contraste, saturación, temperatura,
+  vibrance, nitidez, viñeta y grano, con presets Mono, Sepia, Noir, Vívido,
+  Cálido y Frío.
+- **Ubicación GPS:** el editor de metadatos de imagen muestra y permite
+  editar latitud, longitud y altitud, y quitar la ubicación (solo imágenes).
+
+### Interacción
+- **Teclado con la rueda visible:** flechas para elegir (con vuelta circular),
+  **Enter** aplica y **Escape** cancela.
+- **Shift+Enter en el Explorador:** abre la rueda en el cursor con la
+  selección actual, sin arrastrar (nuevo `tangerine/selection.py`, lectura por
+  Shell.Application fuera del hilo de UI).
+- **Modo táctil opcional:** mantener pulsado un arrastre ≥700 ms sin
+  modificadores muestra la rueda (`touchLongPressEnabled`, desactivado por
+  defecto).
+
+### Correcciones
+- Herramientas de imagen: corregidos los casos AVIF y BMP (metadatos, edición
+  y guardado).
+- La ubicación GPS se conserva al guardar metadatos de una imagen.
+
+### Verificación (todo en verde)
+- **120 pruebas** pytest, incluidos formatos v1.7.0, pixelado, fondo, edición
+  de foto, GPS y teclado de la rueda.
+- Auditoría de rutas: **43/43** identificadores de herramientas sin mensajes de
+  "no disponible".
+- Smoke de editores: **23/23** diálogos; regresión de copia: **11/11**;
+  extremo a extremo: **50/50**; rutas de documentos: **38/38**.
+- Compresión de PDF verificada: notes.pdf 1580 → 1154 B; PDF de 30 páginas
+  27956 → 27408 B.
+
 ## 1.6.0 — 2026-09-16
 
 Internacionalización (inglés/español), OCR opcional para PDF escaneados y una

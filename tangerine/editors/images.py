@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QColorDialog,
     QComboBox,
     QDialogButtonBox,
+    QFileDialog,
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
@@ -31,7 +32,14 @@ from PySide6.QtWidgets import (
 )
 
 from .. import i18n, progress, settings, tools
-from .base import ToolDialog, pil_to_qimage, run_batch
+from .base import (
+    ToolDialog,
+    align_form,
+    chip_button,
+    pil_to_qimage,
+    run_batch,
+    section_label,
+)
 from .ui.canvas import AnnotateCanvas, CropCanvas, RedactCanvas, _draw_op
 
 
@@ -54,6 +62,7 @@ class CompressDialog(ToolDialog):
 
         form = QFormLayout()
         form.setSpacing(10)
+        align_form(form)
         self.strength = QComboBox()
         self.strength.addItems([i18n.tr("opt.balanced"), i18n.tr("opt.strong")])
         form.addRow(i18n.tr("lbl.compression_preset"), self.strength)
@@ -149,6 +158,7 @@ class CollageDialog(ToolDialog):
 
         form = QFormLayout()
         form.setSpacing(9)
+        align_form(form)
         self.layout_combo = QComboBox()
         self.layout_combo.addItems([i18n.tr("opt.grid"), i18n.tr("opt.horizontal"),
                                     i18n.tr("opt.vertical"), i18n.tr("opt.featured")])
@@ -197,8 +207,8 @@ class CollageDialog(ToolDialog):
         self.order_list.setFixedHeight(96)
         order_layout.addWidget(self.order_list, 1)
         buttons = QVBoxLayout()
-        up = QPushButton(i18n.tr("btn.move_up"))
-        down = QPushButton(i18n.tr("btn.move_down"))
+        up = chip_button(i18n.tr("btn.move_up"))
+        down = chip_button(i18n.tr("btn.move_down"))
         up.clicked.connect(lambda: self._move(-1))
         down.clicked.connect(lambda: self._move(1))
         buttons.addWidget(up)
@@ -373,7 +383,7 @@ class CropImageDialog(ToolDialog):
         row = QHBoxLayout()
         self.aspect = QComboBox()
         self.aspect.addItems([i18n.tr("opt.free"), "1:1", "3:2", "4:3", "16:9", "9:16"])
-        row.addWidget(QLabel(i18n.tr("lbl.aspect")))
+        row.addWidget(section_label(i18n.tr("lbl.aspect")))
         row.addWidget(self.aspect)
         row.addSpacing(12)
         self.w_spin = QSpinBox()
@@ -387,7 +397,7 @@ class CropImageDialog(ToolDialog):
         row.addWidget(QLabel(i18n.tr("lbl.h")))
         row.addWidget(self.h_spin)
         row.addStretch(1)
-        reset = QPushButton(i18n.tr("btn.select_all"))
+        reset = chip_button(i18n.tr("btn.select_all"))
         reset.clicked.connect(self._select_all)
         row.addWidget(reset)
         self._body.addLayout(row)
@@ -467,21 +477,21 @@ class RedactPhotoDialog(ToolDialog):
 
         row = QHBoxLayout()
         self.mode = QComboBox()
-        self.mode.addItems([i18n.tr("opt.solid"), i18n.tr("opt.blur")])
-        row.addWidget(QLabel(i18n.tr("lbl.effect")))
+        self.mode.addItems([i18n.tr("opt.solid"), i18n.tr("opt.blur"),
+                            i18n.tr("opt.pixelate")])
+        row.addWidget(section_label(i18n.tr("lbl.effect")))
         row.addWidget(self.mode)
         self.color_button = QPushButton(i18n.tr("btn.color"))
         self.color_button.clicked.connect(self._pick_color)
         self._color = QColor("#000000")
         self._sync_color()
         row.addWidget(self.color_button)
-        self.mode.currentIndexChanged.connect(
-            lambda: self.color_button.setEnabled(self.mode.currentIndex() == 0))
+        self.mode.currentIndexChanged.connect(self._mode_changed)
         row.addStretch(1)
-        detect = QPushButton(i18n.tr("btn.detect_faces"))
+        detect = chip_button(i18n.tr("btn.detect_faces"))
         detect.clicked.connect(self._detect_faces)
         row.addWidget(detect)
-        remove = QPushButton(i18n.tr("btn.remove_selected"))
+        remove = chip_button(i18n.tr("btn.remove_selected"))
         remove.clicked.connect(self._remove_selected)
         row.addWidget(remove)
         self._body.addLayout(row)
@@ -495,6 +505,12 @@ class RedactPhotoDialog(ToolDialog):
     def _sync_color(self) -> None:
         self.color_button.setStyleSheet(
             f"border-left: 16px solid {self._color.name()}; padding-left: 8px;")
+
+    def _mode_changed(self) -> None:
+        index = self.mode.currentIndex()
+        self.color_button.setEnabled(index == 0)
+        self.canvas.mode = ["solid", "blur", "pixelate"][index]
+        self.canvas.update()
 
     def _pick_color(self) -> None:
         chosen = QColorDialog.getColor(
@@ -536,7 +552,7 @@ class RedactPhotoDialog(ToolDialog):
             self, i18n.tr("dlg.redact.title"),
             i18n.tr("dlg.redact.need_box"))
             return
-        mode = "solid" if self.mode.currentIndex() == 0 else "blur"
+        mode = ["solid", "blur", "pixelate"][self.mode.currentIndex()]
         boxes = [
             (int(b["x"]), int(b["y"]), int(b["w"]), int(b["h"]),
              mode, self._color.name())
@@ -557,49 +573,230 @@ class BackgroundDialog(ToolDialog):
     def __init__(self, path, parent: QWidget | None = None):
         super().__init__(i18n.tr("dlg.background.title"), parent)
         self._path = Path(path)
-        self._color = QColor("#FFFFFF")
+        self._thumb_dir = Path(tempfile.mkdtemp(prefix="tangerine_background_"))
+        self.finished.connect(self._cleanup_thumbs)
         image = tools.load_image(self._path)
         self._img_w, self._img_h = image.width, image.height
+        image.thumbnail((480, 480))
+        self._thumb_path = self._thumb_dir / "thumb.png"
+        image.convert("RGBA").save(self._thumb_path, "PNG")
+        self._scale = (image.width / self._img_w) if self._img_w else 1.0
 
+        self._color = QColor("#FFFFFF")
+        self._from_color = QColor("#F87800")
+        self._to_color = QColor("#3A2416")
+        self._image_path: Path | None = None
+
+        self._preview_timer = QTimer(self)
+        self._preview_timer.setSingleShot(True)
+        self._preview_timer.setInterval(280)
+        self._preview_timer.timeout.connect(self._refresh_preview)
+
+        top = QHBoxLayout()
+        top.setSpacing(14)
         form = QFormLayout()
-        form.setSpacing(10)
+        form.setSpacing(9)
+        align_form(form)
+
+        self.fill_type = QComboBox()
+        self.fill_type.addItems([i18n.tr("opt.bg_color"),
+                                 i18n.tr("opt.bg_gradient"),
+                                 i18n.tr("opt.bg_image")])
+        form.addRow(i18n.tr("lbl.background"), self.fill_type)
+
+        rows: list[tuple[QLabel, QWidget]] = []
+
+        def add_row(label_text: str, field: QWidget) -> None:
+            label = QLabel(label_text)
+            form.addRow(label, field)
+            rows.append((label, field))
+
         self.color_button = QPushButton()
         self.color_button.clicked.connect(self._pick_color)
-        self._sync_color()
-        form.addRow(i18n.tr("lbl.background"), self.color_button)
+        self._sync_button(self.color_button, self._color)
+        add_row(i18n.tr("btn.color"), self.color_button)
+
+        gradient = QWidget()
+        gradient_row = QHBoxLayout(gradient)
+        gradient_row.setContentsMargins(0, 0, 0, 0)
+        self.from_button = QPushButton()
+        self.from_button.clicked.connect(self._pick_from_color)
+        self.to_button = QPushButton()
+        self.to_button.clicked.connect(self._pick_to_color)
+        self._sync_button(self.from_button, self._from_color)
+        self._sync_button(self.to_button, self._to_color)
+        gradient_row.addWidget(self.from_button, 1)
+        gradient_row.addWidget(self.to_button, 1)
+        self.angle = QSpinBox()
+        self.angle.setRange(0, 360)
+        self.angle.setSuffix("°")
+        gradient_row.addWidget(self.angle)
+        add_row(i18n.tr("lbl.gradient_from"), gradient)
+
+        image_picker = QWidget()
+        image_row = QHBoxLayout(image_picker)
+        image_row.setContentsMargins(0, 0, 0, 0)
+        choose = chip_button(i18n.tr("btn.choose_image"))
+        choose.clicked.connect(self._pick_image)
+        self.image_label = QLabel("—")
+        self.image_label.setProperty("dim", True)
+        image_row.addWidget(choose)
+        image_row.addWidget(self.image_label, 1)
+        add_row(i18n.tr("opt.bg_image"), image_picker)
+
+        self.aspect = QComboBox()
+        self.aspect.addItems([i18n.tr("opt.aspect_original"), "1:1", "4:3",
+                              "3:2", "16:9", "9:16"])
+        form.addRow(i18n.tr("lbl.aspect"), self.aspect)
+
         self.margin = QSpinBox()
         self.margin.setRange(0, 512)
-        self.margin.setValue(0)
         self.margin.setSuffix(" px")
         form.addRow(i18n.tr("lbl.margin"), self.margin)
-        self._body.addLayout(form)
+
+        self.radius = QSpinBox()
+        self.radius.setRange(0, 256)
+        self.radius.setSuffix(" px")
+        form.addRow(i18n.tr("lbl.rounded_corners"), self.radius)
+        top.addLayout(form)
+
+        self.preview = QLabel()
+        self.preview.setFixedSize(330, 250)
+        self.preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.preview.setProperty("card", True)
+        self.preview.setStyleSheet(
+            "background: rgba(127,127,127,0.12); border-radius: 10px;")
+        top.addWidget(self.preview)
+        self._body.addLayout(top)
 
         note = QLabel(i18n.tr("dlg.background.note"))
         note.setProperty("dim", True)
         note.setWordWrap(True)
         self._body.addWidget(note)
-        self.add_buttons(i18n.tr("btn.save_background"))
 
-    def _sync_color(self) -> None:
-        self.color_button.setStyleSheet(
-            f"border-left: 16px solid {self._color.name()}; padding-left: 8px;")
-        self.color_button.setText(self._color.name())
+        self._fill_rows = rows
+        self.fill_type.currentIndexChanged.connect(self._fill_changed)
+        for widget in (self.aspect,):
+            widget.currentIndexChanged.connect(self._queue_preview)
+        for widget in (self.margin, self.radius, self.angle):
+            widget.valueChanged.connect(self._queue_preview)
+        self.add_buttons(i18n.tr("btn.save_background"))
+        self._fill_changed()
+        QTimer.singleShot(80, self._refresh_preview)
+
+    def _cleanup_thumbs(self) -> None:
+        directory = getattr(self, "_thumb_dir", None)
+        if directory is None:
+            return
+        self._thumb_dir = None
+        shutil.rmtree(directory, ignore_errors=True)
+
+    def closeEvent(self, event) -> None:  # noqa: N802
+        self._cleanup_thumbs()
+        super().closeEvent(event)
+
+    def __del__(self) -> None:
+        try:
+            self._cleanup_thumbs()
+        except Exception:
+            pass
+
+    def _sync_button(self, button: QPushButton, color: QColor) -> None:
+        button.setStyleSheet(
+            f"border-left: 16px solid {color.name()}; padding-left: 8px;")
+        button.setText(color.name())
 
     def _pick_color(self) -> None:
         chosen = QColorDialog.getColor(
             self._color, self, i18n.tr("dlg.background.color_title"))
         if chosen.isValid():
             self._color = chosen
-            self._sync_color()
+            self._sync_button(self.color_button, self._color)
+            self._queue_preview()
+
+    def _pick_from_color(self) -> None:
+        chosen = QColorDialog.getColor(
+            self._from_color, self, i18n.tr("dlg.background.color_title"))
+        if chosen.isValid():
+            self._from_color = chosen
+            self._sync_button(self.from_button, self._from_color)
+            self._queue_preview()
+
+    def _pick_to_color(self) -> None:
+        chosen = QColorDialog.getColor(
+            self._to_color, self, i18n.tr("dlg.background.color_title"))
+        if chosen.isValid():
+            self._to_color = chosen
+            self._sync_button(self.to_button, self._to_color)
+            self._queue_preview()
+
+    def _pick_image(self) -> None:
+        chosen, _ = QFileDialog.getOpenFileName(
+            self, i18n.tr("dlg.background.image_title"), "",
+            i18n.tr("fmt.images_filter"))
+        if chosen:
+            self._image_path = Path(chosen)
+            self.image_label.setText(self._image_path.name)
+            self._queue_preview()
+
+    def _fill_changed(self) -> None:
+        index = self.fill_type.currentIndex()
+        for row_index, (label, widget) in enumerate(self._fill_rows):
+            visible = row_index == index
+            label.setVisible(visible)
+            widget.setVisible(visible)
+        self._queue_preview()
+
+    def _queue_preview(self) -> None:
+        self._preview_timer.start()
+
+    def _options(self, scale: float = 1.0) -> dict:
+        kind = ["color", "gradient", "image"][self.fill_type.currentIndex()]
+        if kind == "gradient":
+            fill = {"type": "gradient", "from": self._from_color.name(),
+                    "to": self._to_color.name(), "angle": self.angle.value()}
+        elif kind == "image":
+            fill = {"type": "image",
+                    "path": str(self._image_path) if self._image_path else ""}
+        else:
+            fill = {"type": "color", "color": self._color.name()}
+        return {
+            "fill": fill,
+            "aspect": ["original", "1:1", "4:3", "3:2", "16:9", "9:16"][
+                self.aspect.currentIndex()],
+            "margin": max(0, int(round(self.margin.value() * scale))),
+            "radius": max(0, int(round(self.radius.value() * scale))),
+            "fit": "contain",
+        }
+
+    def _refresh_preview(self) -> None:
+        options = self._options(self._scale)
+        if options["fill"]["type"] == "image" and not options["fill"]["path"]:
+            self.preview.setText(i18n.tr("msg.preview_unavailable"))
+            return
+        try:
+            out = tools.add_background(
+                self._thumb_path, options,
+                tools.Ctx(progress=lambda v: None, status=lambda s: None), set())
+            pixmap = QPixmap(str(out))
+            if not pixmap.isNull():
+                self.preview.setPixmap(pixmap.scaled(
+                    self.preview.size() - QSize(12, 12),
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation))
+        except Exception:
+            self.preview.setText(i18n.tr("msg.preview_unavailable"))
 
     def _accept_clicked(self) -> None:
-        margin = self.margin.value()
-        width = self._img_w + margin * 2
-        height = self._img_h + margin * 2
+        if self.fill_type.currentIndex() == 2 and self._image_path is None:
+            QMessageBox.warning(
+                self, i18n.tr("dlg.background.title"),
+                i18n.tr("msg.background.no_image"))
+            return
+        options = self._options()
         progress.run_job(
             i18n.tr("action.adding_background_to", name=self._path.name),
-            lambda ctx: [tools.add_background(
-                self._path, self._color.name(), width, height, ctx, set())],
+            lambda ctx: [tools.add_background(self._path, options, ctx, set())],
         )
         self.accept()
 
@@ -609,6 +806,8 @@ class BackgroundDialog(ToolDialog):
 # ---------------------------------------------------------------------------
 
 class EditPhotoDialog(ToolDialog):
+    PRESETS = ["none", "mono", "sepia", "noir", "vivid", "cool", "warm"]
+
     def __init__(self, path, parent: QWidget | None = None):
         super().__init__(i18n.tr("dlg.edit.title"), parent)
         self._path = Path(path)
@@ -628,6 +827,7 @@ class EditPhotoDialog(ToolDialog):
 
         form = QFormLayout()
         form.setSpacing(10)
+        align_form(form)
 
         def slider_row(label: str, min_v: int, max_v: int, value: int):
             slider = QSlider(Qt.Orientation.Horizontal)
@@ -645,24 +845,54 @@ class EditPhotoDialog(ToolDialog):
             form.addRow(label, row)
             return slider
 
-        self.brightness = slider_row(i18n.tr("lbl.brightness"), 40, 160, 100)
-        self.contrast = slider_row(i18n.tr("lbl.contrast"), 40, 160, 100)
-        self.saturation = slider_row(i18n.tr("lbl.saturation"), 0, 200, 100)
-        self.sharpness = slider_row(i18n.tr("lbl.sharpness"), 0, 300, 100)
+        self.preset = QComboBox()
+        self.preset.addItems([i18n.tr("opt.preset_none"), i18n.tr("opt.preset_mono"),
+                              i18n.tr("opt.preset_sepia"), i18n.tr("opt.preset_noir"),
+                              i18n.tr("opt.preset_vivid"), i18n.tr("opt.preset_cool"),
+                              i18n.tr("opt.preset_warm")])
+        self.preset.currentIndexChanged.connect(self._queue_preview)
+        form.addRow(i18n.tr("lbl.preset"), self.preset)
+
+        self.exposure = slider_row(i18n.tr("lbl.exposure"), -100, 100, 0)
+        self.contrast = slider_row(i18n.tr("lbl.contrast"), -100, 100, 0)
+        self.saturation = slider_row(i18n.tr("lbl.saturation"), -100, 100, 0)
+        self.temperature = slider_row(i18n.tr("lbl.temperature"), -100, 100, 0)
+        self.vibrance = slider_row(i18n.tr("lbl.vibrance"), -100, 100, 0)
+        self.sharpness = slider_row(i18n.tr("lbl.sharpness"), 0, 100, 0)
+        self.vignette = slider_row(i18n.tr("lbl.vignette"), 0, 100, 0)
+        self.grain = slider_row(i18n.tr("lbl.grain"), 0, 100, 0)
         self._body.addLayout(form)
+
+        bottom = QHBoxLayout()
+        reset = chip_button(i18n.tr("btn.reset"))
+        reset.clicked.connect(self._reset)
+        bottom.addWidget(reset)
+        bottom.addStretch(1)
+        self._body.addLayout(bottom)
 
         self.add_buttons(i18n.tr("btn.save_copy"))
         QTimer.singleShot(60, self._refresh_preview)
 
-    def _enhanced(self, image):
-        from PIL import ImageEnhance
+    def _options(self) -> dict:
+        return {
+            "preset": self.PRESETS[self.preset.currentIndex()],
+            "exposure": self.exposure.value(),
+            "contrast": self.contrast.value(),
+            "saturation": self.saturation.value(),
+            "temperature": self.temperature.value(),
+            "vibrance": self.vibrance.value(),
+            "sharpness": self.sharpness.value(),
+            "vignette": self.vignette.value(),
+            "grain": self.grain.value(),
+        }
 
-        result = image
-        result = ImageEnhance.Brightness(result).enhance(self.brightness.value() / 100.0)
-        result = ImageEnhance.Contrast(result).enhance(self.contrast.value() / 100.0)
-        result = ImageEnhance.Color(result).enhance(self.saturation.value() / 100.0)
-        result = ImageEnhance.Sharpness(result).enhance(self.sharpness.value() / 100.0)
-        return result
+    def _reset(self) -> None:
+        for slider in (self.exposure, self.contrast, self.saturation,
+                       self.temperature, self.vibrance, self.sharpness,
+                       self.vignette, self.grain):
+            slider.setValue(0)
+        self.preset.setCurrentIndex(0)
+        self._queue_preview()
 
     def _queue_preview(self) -> None:
         self._preview_timer.start()
@@ -670,29 +900,16 @@ class EditPhotoDialog(ToolDialog):
     def _refresh_preview(self) -> None:
         preview = self._image.copy()
         preview.thumbnail((520, 290))
-        enhanced = self._enhanced(preview)
-        self.preview.setPixmap(QPixmap.fromImage(pil_to_qimage(enhanced.convert("RGBA"))))
+        edited = tools._apply_edits(preview, self._options())
+        self.preview.setPixmap(QPixmap.fromImage(pil_to_qimage(edited)))
 
     def _accept_clicked(self) -> None:
         path = self._path
-        values = (self.brightness.value(), self.contrast.value(),
-                  self.saturation.value(), self.sharpness.value())
-
-        def work(ctx):
-            from PIL import ImageEnhance
-
-            image = tools.load_image(path)
-            ctx.status(i18n.tr("action.editing", name=path.name))
-            image = ImageEnhance.Brightness(image).enhance(values[0] / 100.0)
-            image = ImageEnhance.Contrast(image).enhance(values[1] / 100.0)
-            image = ImageEnhance.Color(image).enhance(values[2] / 100.0)
-            image = ImageEnhance.Sharpness(image).enhance(values[3] / 100.0)
-            out = tools._unique(path.parent, f"{path.stem} Edited", ".png", set())
-            image.convert("RGBA").save(out, "PNG")
-            ctx.progress(1.0)
-            return [out]
-
-        progress.run_job(i18n.tr("action.editing", name=path.name), work)
+        options = self._options()
+        progress.run_job(
+            i18n.tr("action.editing", name=path.name),
+            lambda ctx: [tools.edit_image(path, options, ctx, set())],
+        )
         self.accept()
 
 
@@ -755,9 +972,9 @@ class AnnotateDialog(ToolDialog):
         self._body.addLayout(row)
 
         bottom = QHBoxLayout()
-        undo = QPushButton(i18n.tr("btn.undo"))
+        undo = chip_button(i18n.tr("btn.undo"))
         undo.clicked.connect(self.canvas.undo)
-        reset = QPushButton(i18n.tr("btn.reset"))
+        reset = chip_button(i18n.tr("btn.reset"))
         reset.clicked.connect(self.canvas.reset_ops)
         bottom.addWidget(undo)
         bottom.addWidget(reset)
@@ -809,6 +1026,9 @@ class AnnotateDialog(ToolDialog):
 
 class MetadataDialog(ToolDialog):
     EDITABLE = {name: tag for tag, name in tools.EXIF_TAGS.items()}
+    LOCATION_KEYS = (("meta.latitude", "latitude"),
+                     ("meta.longitude", "longitude"),
+                     ("meta.altitude", "altitude"))
 
     def __init__(self, path, parent: QWidget | None = None):
         super().__init__(i18n.tr("dlg.metadata.title"), parent)
@@ -817,12 +1037,21 @@ class MetadataDialog(ToolDialog):
 
         from PySide6.QtWidgets import QTableWidget, QTableWidgetItem
 
-        self.table = QTableWidget(len(self._rows), 2)
+        labels = [i18n.tr(key) for key, _ in self.LOCATION_KEYS]
+        rows = [row for row in self._rows if row[0] not in labels]
+        if self._is_image():
+            location = tools.read_location(self._path)
+            rows.append((labels[0], f"{location['latitude']:.6f}" if location else ""))
+            rows.append((labels[1], f"{location['longitude']:.6f}" if location else ""))
+            altitude = location.get("altitude") if location else None
+            rows.append((labels[2], "" if altitude is None else f"{altitude:.2f}"))
+
+        self.table = QTableWidget(len(rows), 2)
         self.table.setHorizontalHeaderLabels(
             [i18n.tr("lbl.field"), i18n.tr("lbl.value")])
         self.table.verticalHeader().setVisible(False)
         self.table.setMinimumSize(560, 360)
-        for row, (name, value) in enumerate(self._rows):
+        for row, (name, value) in enumerate(rows):
             name_item = QTableWidgetItem(name)
             name_item.setFlags(name_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
             self.table.setItem(row, 0, name_item)
@@ -838,6 +1067,11 @@ class MetadataDialog(ToolDialog):
         save = box.addButton(
             i18n.tr("btn.save_copy"), QDialogButtonBox.ButtonRole.AcceptRole)
         save.setProperty("accent", True)
+        if self._is_image():
+            remove_location = box.addButton(
+                i18n.tr("btn.remove_location"),
+                QDialogButtonBox.ButtonRole.DestructiveRole)
+            remove_location.clicked.connect(self._remove_location)
         if self._can_strip():
             remove_all = box.addButton(
                 i18n.tr("btn.remove_all"),
@@ -854,8 +1088,7 @@ class MetadataDialog(ToolDialog):
         return self._path.suffix.lower() not in (".pdf", ".txt")
 
     def _refresh_status(self) -> None:
-        ext = self._path.suffix.lower()
-        if ext in (".jpg", ".jpeg", ".png", ".tiff", ".tif", ".webp", ".heic", ".heif"):
+        if self._is_image():
             self._status.setText(i18n.tr(
                 "dlg.metadata.status_image",
                 name=self._path.stem, ext=self._path.suffix))
@@ -876,9 +1109,27 @@ class MetadataDialog(ToolDialog):
                 fields[tag] = value_item.text()
         return fields
 
+    def _location(self) -> dict | None:
+        mapping = {i18n.tr(i18n_key): key for i18n_key, key in self.LOCATION_KEYS}
+        values: dict[str, float] = {}
+        for row in range(self.table.rowCount()):
+            name_item = self.table.item(row, 0)
+            value_item = self.table.item(row, 1)
+            if name_item is None or value_item is None:
+                continue
+            key = mapping.get(name_item.text())
+            if key is None:
+                continue
+            text = value_item.text().strip()
+            if text:
+                try:
+                    values[key] = float(text.replace(",", "."))
+                except ValueError:
+                    raise ValueError(key)
+        return values or None
+
     def _is_image(self) -> bool:
-        return self._path.suffix.lower() in (
-            ".jpg", ".jpeg", ".png", ".tiff", ".tif", ".webp", ".heic", ".heif")
+        return self._path.suffix.lower() in tools.IMAGE_META_EXTS
 
     def _save_copy(self) -> None:
         if not self._is_image():
@@ -887,11 +1138,33 @@ class MetadataDialog(ToolDialog):
                 message += i18n.tr("dlg.metadata.save_image_only_strip")
             QMessageBox.information(self, i18n.tr("dlg.metadata.title"), message)
             return
+        try:
+            location = self._location()
+        except ValueError:
+            location = None
+            QMessageBox.warning(
+                self, i18n.tr("dlg.metadata.title"),
+                i18n.tr("dlg.metadata.location_invalid"))
+            return
+        if location and ("latitude" not in location or "longitude" not in location):
+            QMessageBox.warning(
+                self, i18n.tr("dlg.metadata.title"),
+                i18n.tr("dlg.metadata.location_invalid"))
+            return
         fields = self._fields()
         path = self._path
         progress.run_job(
             i18n.tr("action.writing_metadata", name=path.name),
-            lambda ctx: [tools.write_metadata_image(path, fields, False, ctx, set())],
+            lambda ctx: [tools.write_metadata_image(
+                path, fields, False, ctx, set(), location)],
+        )
+        self.accept()
+
+    def _remove_location(self) -> None:
+        path = self._path
+        progress.run_job(
+            i18n.tr("action.removing_location", name=path.name),
+            lambda ctx: [tools.remove_location(path, ctx, set())],
         )
         self.accept()
 

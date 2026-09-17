@@ -78,6 +78,9 @@ hiddenimports = [
     "PySide6.QtMultimedia",
     "PySide6.QtMultimediaWidgets",
     "PySide6.QtSvg",
+    # Explorer selection (Shift+Enter trigger) uses Shell.Application COM.
+    "comtypes",
+    "comtypes.client",
 ]
 
 # Optional OCR stack (added by a separate workstream). Collect it when

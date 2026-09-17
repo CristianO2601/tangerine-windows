@@ -12,10 +12,12 @@ log = logging.getLogger("tangerine")
 
 DEFAULTS: dict[str, Any] = {
     "language": "en",
+    "appearanceTheme": "system",
     "conversionWheelDragModifierMask": "shift",
     "toolsWheelDragModifierMask": "alt+shift",
     "soundsAndHapticsEnabled": True,
     "conversionFanTheme": "glass",
+    "touchLongPressEnabled": False,
     "defaultImageCompressionStrength": "balanced",
     "defaultImageCompressionSize": "original",
     "defaultVideoCompressionStrength": "balanced",
@@ -38,6 +40,14 @@ DEFAULTS: dict[str, Any] = {
 
 _lock = threading.Lock()
 _cache: dict[str, Any] | None = None
+
+APPEARANCE_DEFAULT = "system"
+APPEARANCE_VALUES = ("system", "light", "dark")
+
+
+def appearance_theme() -> str:
+    """The validated appearance override: ``system``, ``light`` or ``dark``."""
+    return get("appearanceTheme", APPEARANCE_DEFAULT)
 
 
 def load() -> dict[str, Any]:
@@ -71,10 +81,20 @@ def _ensure_cache() -> dict[str, Any]:
 def get(key: str, default: Any = None) -> Any:
     data = load()
     if key in data:
-        return data[key]
+        return _normalize(key, data[key])
     if default is not None:
-        return default
-    return DEFAULTS.get(key)
+        return _normalize(key, default)
+    return _normalize(key, DEFAULTS.get(key))
+
+
+def _normalize(key: str, value: Any) -> Any:
+    """Coerce stored values that users (or older builds) may have corrupted."""
+    if key == "appearanceTheme":
+        text = str(value or "").lower()
+        return text if text in APPEARANCE_VALUES else APPEARANCE_DEFAULT
+    if key == "touchLongPressEnabled":
+        return bool(value)
+    return value
 
 
 def set(key: str, value: Any) -> None:

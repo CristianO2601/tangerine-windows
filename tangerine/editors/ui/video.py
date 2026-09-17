@@ -9,14 +9,13 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QMessageBox,
-    QPushButton,
     QSlider,
     QVBoxLayout,
     QWidget,
 )
 
 from ... import i18n
-from ..base import ToolDialog
+from ..base import ToolDialog, chip_button
 from .canvas import RedactCanvas
 from .waveform import PlayerMixin
 
@@ -43,9 +42,9 @@ class VideoPane(QWidget, PlayerMixin):
         self._player.positionChanged.connect(self._on_position)
 
         controls = QHBoxLayout()
-        play = QPushButton(i18n.tr("btn.play"))
+        play = chip_button(i18n.tr("btn.play"))
         play.clicked.connect(self.play)
-        stop = QPushButton(i18n.tr("btn.stop"))
+        stop = chip_button(i18n.tr("btn.stop"))
         stop.clicked.connect(self._player.stop)
         self.time_label = QLabel("0:00.0 / 0:00.0")
         self.time_label.setProperty("dim", True)
