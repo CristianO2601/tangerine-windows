@@ -180,6 +180,7 @@ def _wedge_path(
 
 class TangerineWheel(QWidget):
     activated = Signal(list, str)
+    closed = Signal()
 
     def __init__(self, parent=None):
         super().__init__(None)
@@ -372,6 +373,12 @@ class TangerineWheel(QWidget):
             self._depart_anim.stop()
         self.update()
 
+    def _close(self) -> None:
+        """User-dismissed wheel: clear state and announce the close."""
+        self.reset()
+        self.hide()
+        self.closed.emit()
+
     # -- interaction ---------------------------------------------------
 
     def hit_test(self, local: QPointF) -> int:
@@ -434,6 +441,13 @@ class TangerineWheel(QWidget):
         event.ignore()
         return False
 
+    def _merge_files(self, payload: list[str]) -> list[str]:
+        """Keep the full selection when the OLE payload collapsed it."""
+        known = self._file_paths
+        if known and len(payload) < len(known) and set(payload) <= set(known):
+            return list(known)
+        return payload
+
     def dragEnterEvent(self, event) -> None:
         mime = event.mimeData()
         files: list[str] = []
@@ -444,6 +458,7 @@ class TangerineWheel(QWidget):
         if not files:
             event.ignore()
             return
+        files = self._merge_files(files)
         self._file_paths = files
         if self._factory is not None:
             self.set_items(self._factory(files))
@@ -486,10 +501,40 @@ class TangerineWheel(QWidget):
     def leaveEvent(self, event) -> None:
         self._set_hover_index(-1)
 
+    def mousePressEvent(self, event) -> None:
+        if event.button() == Qt.MouseButton.LeftButton:
+            index = self.hit_test(event.position())
+            if 0 <= index < len(self._items):
+                key = self._items[index].key
+                files = list(self._file_paths)
+                self.reset()
+                self.hide()
+                self.activated.emit(files, key)
+            else:
+                self._close()
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def wheelEvent(self, event) -> None:
+        """Scroll over the wheel moves the hover like the arrow keys."""
+        count = len(self._items)
+        if count:
+            delta = event.angleDelta().y()
+            if delta:
+                step = 1 if delta < 0 else -1
+                if 0 <= self._hover < count:
+                    self._set_hover_index((self._hover + step) % count)
+                else:
+                    self._set_hover_index(0 if step > 0 else count - 1)
+            event.accept()
+            return
+        super().wheelEvent(event)
+
     def keyPressEvent(self, event) -> None:
         key = event.key()
         if key == Qt.Key.Key_Escape:
-            self.hide()
+            self._close()
             event.accept()
             return
         count = len(self._items)

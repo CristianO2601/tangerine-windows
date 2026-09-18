@@ -153,6 +153,12 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "settings.wheels.hint": (
             "The defaults are Shift for conversions and Alt+Shift for tools."
         ),
+        "settings.wheels.sticky": "Sticky wheel (toggle)",
+        "settings.wheels.sticky_hint": (
+            "Press this combination with files selected in the Explorer to keep "
+            "the wheel open after releasing the keys: click a petal to apply or "
+            "click outside to close. Delete the combination to disable it."
+        ),
         "settings.formats.search": "Search conversion defaults…",
         "settings.formats.images": "Images",
         "settings.formats.videos": "Videos",
@@ -761,6 +767,13 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "settings.wheels.hint": (
             "Los valores predeterminados son Shift para conversiones y "
             "Alt+Shift para herramientas."
+        ),
+        "settings.wheels.sticky": "Rueda fija (toggle)",
+        "settings.wheels.sticky_hint": (
+            "Pulsa esta combinación con archivos seleccionados en el Explorador "
+            "para que la rueda quede abierta al soltar las teclas: haz clic en un "
+            "pétalo para aplicarla o fuera para cerrarla. Borra la combinación "
+            "para desactivarla."
         ),
         "settings.formats.search": "Buscar valores de conversión…",
         "settings.formats.images": "Imágenes",

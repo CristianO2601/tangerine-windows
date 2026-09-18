@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+import string
 import threading
 from typing import Any
 
@@ -15,6 +16,7 @@ DEFAULTS: dict[str, Any] = {
     "appearanceTheme": "system",
     "conversionWheelDragModifierMask": "shift",
     "toolsWheelDragModifierMask": "alt+shift",
+    "wheelToggleHotkey": "ctrl+shift+w",
     "soundsAndHapticsEnabled": True,
     "conversionFanTheme": "glass",
     "touchLongPressEnabled": False,
@@ -175,3 +177,51 @@ def mask_label(text: str) -> str:
     if not mask:
         return i18n.tr("settings.mask.none")
     return " + ".join(MODIFIER_LABELS[m] for m in MODIFIER_ORDER if m in mask)
+
+
+HOTKEY_KEYS = (
+    {letter for letter in string.ascii_lowercase}
+    | {digit for digit in string.digits}
+    | {f"f{number}" for number in range(1, 13)}
+    | {"space"}
+)
+
+
+def _key_label(key: str) -> str:
+    return "Space" if key == "space" else key.upper()
+
+
+def parse_hotkey(text: str) -> tuple[set[str], str] | None:
+    """Parse ``ctrl+shift+w`` into (modifier mask, key). None when invalid."""
+    tokens = [token.strip().lower() for token in str(text or "").split("+")]
+    tokens = [token for token in tokens if token]
+    mask: list[str] = []
+    key: str | None = None
+    for token in tokens:
+        name = _ALIASES.get(token, token)
+        if name in MODIFIER_ORDER:
+            if name not in mask:
+                mask.append(name)
+        elif name in HOTKEY_KEYS and key is None:
+            key = name
+        else:
+            return None
+    if not mask or key is None:
+        return None
+    return {name for name in mask}, key
+
+
+def format_hotkey(mask: set[str], key: str) -> str:
+    return "+".join([part for part in (format_mask(mask), key) if part])
+
+
+def hotkey_label(text: str) -> str:
+    from . import i18n
+
+    combo = parse_hotkey(text)
+    if combo is None:
+        return i18n.tr("settings.mask.none")
+    mask, key = combo
+    parts = [MODIFIER_LABELS[m] for m in MODIFIER_ORDER if m in mask]
+    parts.append(_key_label(key))
+    return " + ".join(parts)

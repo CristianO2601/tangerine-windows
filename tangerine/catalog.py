@@ -276,13 +276,29 @@ def _subtitle_targets(exts: set[str]) -> list[str]:
     return targets
 
 
+def _mixed_conversions(paths_: list[Path], families: set) -> list[Conversion]:
+    """Targets every family in a mixed selection can reach (intersection)."""
+    if None in families:
+        return []
+    first = family_of(paths_[0])
+    ordered = [first] + [f for f in sorted(families) if f != first]
+    maps: list[dict[str, Conversion]] = []
+    for family in ordered:
+        subset = [p for p in paths_ if family_of(p) == family]
+        maps.append({c.target_ext: c for c in conversions_for(subset)})
+    common = set(maps[0])
+    for mapping in maps[1:]:
+        common &= set(mapping)
+    return [conv for target, conv in maps[0].items() if target in common]
+
+
 def conversions_for(paths_: list[Path]) -> list[Conversion]:
     """Output-format targets offered for the given source selection."""
     if not paths_:
         return []
     families = {family_of(p) for p in paths_}
     if len(families) != 1:
-        return []
+        return _mixed_conversions(paths_, families)
     family = families.pop()
     if family is None:
         return []
@@ -423,22 +439,25 @@ def tools_for(paths_: list[Path]) -> list[Tool]:
         return out
 
     if len(paths_) > 1:
-        if unique == {FAMILY_IMAGE}:
-            return filt([
-                Tool("img.compress", "Compress", FAMILY_IMAGE, batch=True),
-                Tool("img.pdf", "Create PDF", FAMILY_IMAGE, batch=True),
-                Tool("img.collage", "Create Collage", FAMILY_IMAGE, batch=True),
-                Tool("qr.read", "Read QR Codes", FAMILY_IMAGE, batch=True),
-            ])
-        if unique == {FAMILY_VIDEO}:
-            return filt([t for t in VIDEO_TOOLS if t.id == "vid.join"])
-        if unique == {FAMILY_PDF}:
-            return filt([t for t in PDF_TOOLS if t.id == "pdf.merge"])
-        if unique == {FAMILY_AUDIO}:
-            return filt([t for t in AUDIO_TOOLS if t.id == "aud.compress"])
-        if unique <= {FAMILY_IMAGE, FAMILY_PDF}:
-            return filt([Tool("qr.read", "Read QR Codes", FAMILY_PDF, batch=True)])
-        return []
+        counts = {f: families.count(f) for f in unique}
+        tools: list[Tool] = []
+        if counts.get(FAMILY_IMAGE):
+            tools.append(Tool("img.compress", "Compress", FAMILY_IMAGE, batch=True))
+            tools.append(Tool("img.pdf", "Create PDF", FAMILY_IMAGE, batch=True))
+            if counts[FAMILY_IMAGE] > 1:
+                tools.append(Tool("img.collage", "Create Collage", FAMILY_IMAGE, batch=True))
+        if counts.get(FAMILY_VIDEO):
+            tools.append(Tool("vid.compress", "Compress", FAMILY_VIDEO, batch=True))
+            if counts[FAMILY_VIDEO] > 1:
+                tools.append(Tool("vid.join", "Join Videos", FAMILY_VIDEO, batch=True))
+        if counts.get(FAMILY_AUDIO):
+            tools.append(Tool("aud.compress", "Compress", FAMILY_AUDIO, batch=True))
+        if counts.get(FAMILY_PDF, 0) > 1:
+            tools.append(Tool("pdf.merge", "Merge into one PDF", FAMILY_PDF, batch=True))
+        if unique & {FAMILY_IMAGE, FAMILY_GIF, FAMILY_PDF}:
+            qr_family = FAMILY_PDF if FAMILY_PDF in unique else FAMILY_IMAGE
+            tools.append(Tool("qr.read", "Read QR Codes", qr_family, batch=True))
+        return filt(tools)
     family = families[0]
     if family == FAMILY_IMAGE:
         path = paths_[0]
@@ -470,3 +489,23 @@ def tools_for(paths_: list[Path]) -> list[Tool]:
 
 
 BATCH_TOOL_IDS = {"img.compress", "img.pdf", "img.collage", "aud.compress", "vid.compress", "vid.join", "pdf.merge"}
+
+#: Families a batch tool applies to; used to filter mixed selections.
+_TOOL_FAMILIES = {
+    "img.compress": {FAMILY_IMAGE},
+    "img.pdf": {FAMILY_IMAGE},
+    "img.collage": {FAMILY_IMAGE},
+    "vid.compress": {FAMILY_VIDEO},
+    "vid.join": {FAMILY_VIDEO},
+    "aud.compress": {FAMILY_AUDIO},
+    "pdf.merge": {FAMILY_PDF},
+    "qr.read": {FAMILY_IMAGE, FAMILY_GIF, FAMILY_PDF},
+}
+
+
+def tool_paths(key: str, paths_: list[Path]) -> list[Path]:
+    """Files of a mixed selection a batch tool actually applies to."""
+    families = _TOOL_FAMILIES.get(key)
+    if families is None:
+        return list(paths_)
+    return [p for p in paths_ if family_of(p) in families]

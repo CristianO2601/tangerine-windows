@@ -1,5 +1,42 @@
 # Changelog
 
+## 1.8.0 — 2026-09-18
+
+Selección múltiple de verdad (tipos mixtos y lotes), rueda fija con atajo
+configurable, navegación con la rueda del ratón y corrección del aviso de
+instancia duplicada.
+
+### Novedades
+- **Selección múltiple real:** con archivos de tipos distintos la rueda ofrece
+  las conversiones comunes (intersección de destinos, p. ej. JPG+PDF → PNG y
+  DOCX; JPG+TXT → PNG y PDF); las herramientas por lotes (comprimir, collage,
+  merger, unir vídeo…) actúan sobre todos los archivos compatibles y filtran
+  por familia al aplicarse (`catalog.tool_paths`).
+- **Arrastre que no pierde archivos:** un snapshot de la selección del
+  Explorador (COM, en segundo plano) hidrata la lista cuando Windows entrega
+  un único archivo en el portapapeles del arrastre (p. ej. Shift+clic), y
+  `dragEnter` fusiona el payload colapsado con los archivos ya conocidos.
+- **Rueda fija (toggle):** `Ctrl+Shift+W` (configurable en Ajustes → Rueda)
+  abre la rueda con la selección del Explorador y la mantiene abierta al
+  soltar las teclas: clic en un pétalo aplica, clic fuera o Escape cierra, y
+  la rueda del ratón mueve el foco. El flujo clásico de mantener Shift no
+  cambia.
+- **Scroll sobre la rueda:** la rueda del ratón mueve el pétalo enfocado con
+  envolvente.
+
+### Correcciones
+- **Instancia duplicada:** el aviso de "ya en ejecución" usaba `showMessage`
+  con la firma equivocada para PySide6 6.11 (el tercer argumento es el icono,
+  no la duración) y el segundo lanzamiento terminaba en un diálogo de error;
+  ahora pasa `QSystemTrayIcon.MessageIcon.Information` + 5000 ms.
+
+### Verificación
+- **144 pruebas** pytest, con 18 nuevas: catálogo mixto (intersección y
+  lotes), snapshot/hidratación del Explorador, rueda fija y atajo,
+  clic/scroll/cierre de la rueda. Además, prueba en vivo del atajo (aparece,
+  persiste al soltar y se cierra con el segundo combo) y de la lectura COM de
+  la selección.
+
 ## 1.7.1 — 2026-09-17
 
 Corrección del arrastre real desde el Explorador: la rueda ya no parpadea,

@@ -5,8 +5,8 @@ import sys
 from pathlib import Path
 
 APP_NAME = "Tangerine"
-APP_VERSION = "1.7.1"
-APP_BUILD = 8
+APP_VERSION = "1.8.0"
+APP_BUILD = 9
 
 
 def app_root() -> Path:

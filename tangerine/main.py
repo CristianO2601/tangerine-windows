@@ -88,6 +88,8 @@ class Controller(QObject):
         self.monitor.wheelHidden.connect(self._hide_wheel)
         self.monitor.wheelRefreshed.connect(self._refresh_wheel)
         self.monitor.keyboardTriggered.connect(self._keyboard_wheel)
+        self.monitor.stickyTriggered.connect(self._show_wheel)
+        self.wheel.closed.connect(self.monitor.sticky_release)
 
         self.tray = QSystemTrayIcon(QIcon(str(paths.icon_path())), self)
         self.tray.setToolTip(i18n.tr("tray.tooltip"))
@@ -191,7 +193,15 @@ class Controller(QObject):
             return
         label = self._labels.get(key)
         if self._mode == "tools":
-            window = actions.run_tool(files, key, None, label)
+            # Mixed selections may include files a batch tool cannot touch
+            # (e.g. photo + PDF): run it only on the matching subset.
+            subset = [
+                str(p)
+                for p in catalog.tool_paths(key, [Path(f) for f in files])
+            ]
+            if not subset:
+                return
+            window = actions.run_tool(subset, key, None, label)
         else:
             window = actions.run_conversions(files, key, None, None)
         self._track(window)
@@ -284,7 +294,11 @@ def _already_running(app):
     tray = QSystemTrayIcon(QIcon(str(paths.icon_path())))
     tray.show()
     tray.showMessage(
-        i18n.tr("app.name"), i18n.tr("tray.already_running"), 5000)
+        i18n.tr("app.name"),
+        i18n.tr("tray.already_running"),
+        QSystemTrayIcon.MessageIcon.Information,
+        5000,
+    )
     QTimer.singleShot(5200, app.quit)
     app.exec()
     return 1

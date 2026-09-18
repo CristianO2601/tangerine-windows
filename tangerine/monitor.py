@@ -49,10 +49,24 @@ MOVEMENT_THRESHOLD = 8.0
 DROP_COOLDOWN_S = 0.6
 LONG_PRESS_S = 0.7
 BUTTON_RELEASE_SAMPLES = 4  # consecutive "up" reads before a release counts
+SELECTION_SNAPSHOT_INTERVAL_S = 0.8
+SELECTION_SNAPSHOT_MAX_AGE_S = 4.0
 
 
 def _is_down(vk: int) -> bool:
     return bool(user32.GetAsyncKeyState(vk) & 0x8000)
+
+
+def _key_vk(name: str) -> int | None:
+    if len(name) == 1 and name.isalnum():
+        return ord(name.upper())
+    if name == "space":
+        return 0x20
+    if name.startswith("f") and name[1:].isdigit():
+        number = int(name[1:])
+        if 1 <= number <= 12:
+            return 0x70 + number - 1
+    return None
 
 
 class DragMonitor(QObject):
@@ -61,6 +75,7 @@ class DragMonitor(QObject):
     wheelHidden = Signal()
     wheelRefreshed = Signal(str)
     keyboardTriggered = Signal(object, object, str)
+    stickyTriggered = Signal(object, object, str)
 
     _selectionReady = Signal(object, object, str)
 
@@ -83,6 +98,12 @@ class DragMonitor(QObject):
         self._press_started = 0.0
         self._long_press_fired = False
         self._touch_mode = False
+        self._snapshot: tuple[int, list[str], float] | None = None
+        self._snapshot_pending = False
+        self._last_snapshot_poll = 0.0
+        self._mods_prev: set[str] = set()
+        self._sticky = False
+        self._toggle_down = False
         self._selectionReady.connect(self.keyboardTriggered)
 
     def stop(self) -> None:
@@ -92,7 +113,17 @@ class DragMonitor(QObject):
         self._visible = False
         self._mode = None
         self._last_files = None
+        self._sticky = False
+        self._set_active(False)
         self._cooldown_until = time.monotonic() + DROP_COOLDOWN_S
+
+    def sticky_release(self) -> None:
+        """The sticky wheel closed itself (petal click or click outside)."""
+        if not self._sticky:
+            return
+        self._sticky = False
+        self._set_active(False)
+        self._visible = False
 
     # -- polling -------------------------------------------------------
 
@@ -153,6 +184,59 @@ class DragMonitor(QObject):
         user32.GetClassNameW(hwnd, buffer, 256)
         return buffer.value in FOREGROUND_ALLOWLIST
 
+    def _maybe_snapshot(self, button: bool, forced: bool = False) -> None:
+        """Rolling copy of the Explorer selection.
+
+        Explorer collapses a multi-selection when Shift is held for the
+        mousedown (Shift+click semantics), so the OLE payload can carry a
+        single file. The snapshot lets the wheel restore the full selection.
+        """
+        if button or self._snapshot_pending:
+            return
+        now = time.monotonic()
+        if (
+            not forced
+            and now - self._last_snapshot_poll < SELECTION_SNAPSHOT_INTERVAL_S
+        ):
+            return
+        self._last_snapshot_poll = now
+        hwnd = selection.foreground_explorer_hwnd()
+        if hwnd is None:
+            return
+        self._snapshot_pending = True
+
+        def worker() -> None:
+            try:
+                files = selection.explorer_selection(hwnd)
+            except Exception:
+                files = []
+            finally:
+                self._snapshot_pending = False
+            if files:
+                self._snapshot = (hwnd, files, time.monotonic())
+
+        threading.Thread(
+            target=worker, name="tangerine-selection-snapshot", daemon=True
+        ).start()
+
+    def _hydrate_from_snapshot(self, files: list[str] | None) -> list[str] | None:
+        """Replace a collapsed drag payload with the Explorer selection."""
+        snapshot = self._snapshot
+        if not snapshot:
+            return files
+        hwnd, snap_files, stamp = snapshot
+        if not snap_files:
+            return files
+        if time.monotonic() - stamp > SELECTION_SNAPSHOT_MAX_AGE_S:
+            return files
+        if selection.foreground_explorer_hwnd() != hwnd:
+            return files
+        if files is None:
+            return list(snap_files)
+        if len(files) == 1 and len(snap_files) > 1 and set(files) <= set(snap_files):
+            return list(snap_files)
+        return files
+
     def _tick(self) -> None:
         down = _is_down(VK_LBUTTON)
         if down:
@@ -171,6 +255,9 @@ class DragMonitor(QObject):
             return
         button = down
         self._poll_keyboard(button)
+        self._poll_toggle()
+        if self._sticky:
+            return
         if button and not self._button_down:
             self._button_down = True
             self._anchor = self._cursor()
@@ -183,6 +270,7 @@ class DragMonitor(QObject):
             self._set_active(True)
         if not button:
             if self._button_down:
+                self._maybe_snapshot(False, forced=True)
                 self._button_down = False
                 self._button_up_ticks = 0
                 self._anchor = None
@@ -190,6 +278,11 @@ class DragMonitor(QObject):
                 self._long_press_fired = False
                 self._touch_mode = False
                 self._set_active(False)
+            held = self._held_modifiers()
+            if held and held != self._mods_prev:
+                self._maybe_snapshot(False, forced=True)
+            self._mods_prev = held
+            self._maybe_snapshot(False)
             if self._visible:
                 self._visible = False
                 self.wheelHidden.emit()
@@ -227,7 +320,7 @@ class DragMonitor(QObject):
         mode = self._mode_for_current_modifiers()
         if mode is None:
             return
-        files = self._drag_files()
+        files = self._hydrate_from_snapshot(self._drag_files())
         # The OLE drag payload is not readable on every Windows build while
         # a drag is in flight (observed on this Windows 11: neither the
         # InShellDragLoop format nor a plain CF_HDROP read returns anything),
@@ -271,6 +364,58 @@ class DragMonitor(QObject):
             target=worker, name="tangerine-enter-selection", daemon=True
         ).start()
 
+    def _poll_toggle(self) -> None:
+        """Configurable hotkey: open a sticky wheel that survives key release."""
+        combo = settings.parse_hotkey(settings.get("wheelToggleHotkey", ""))
+        if combo is None:
+            self._toggle_down = False
+            return
+        mask, key_name = combo
+        vk = _key_vk(key_name)
+        if vk is None:
+            self._toggle_down = False
+            return
+        down = _is_down(vk) and mask <= self._held_modifiers()
+        pressed = down and not self._toggle_down
+        self._toggle_down = down
+        if not pressed:
+            return
+        if self._sticky:
+            self._sticky = False
+            self._set_active(False)
+            if self._visible:
+                self._visible = False
+                self.wheelHidden.emit()
+            return
+        if self._selection_busy or self._visible:
+            return
+        hwnd = selection.foreground_explorer_hwnd()
+        if hwnd is None:
+            return
+        mode = self._mode_for_current_modifiers() or "conversion"
+        cursor = self._cursor()
+        self._sticky = True
+        self._set_active(True)
+        self._selection_busy = True
+
+        def worker() -> None:
+            try:
+                files = selection.explorer_selection(hwnd)
+            except Exception:
+                files = []
+            finally:
+                self._selection_busy = False
+            if files:
+                self._visible = True
+                self.stickyTriggered.emit(cursor, files, mode)
+            elif self._sticky:
+                self._sticky = False
+                self._set_active(False)
+
+        threading.Thread(
+            target=worker, name="tangerine-sticky-selection", daemon=True
+        ).start()
+
     def _maybe_touch_long_press(self, cursor: QPoint) -> bool:
         """Touch mode: hold a drag for >=700 ms without modifiers → wheel."""
         if self._long_press_fired or self._visible:
@@ -283,7 +428,7 @@ class DragMonitor(QObject):
             return False
         if time.monotonic() - self._press_started < LONG_PRESS_S:
             return False
-        files = self._drag_files()
+        files = self._hydrate_from_snapshot(self._drag_files())
         if not files:
             return False
         self._long_press_fired = True

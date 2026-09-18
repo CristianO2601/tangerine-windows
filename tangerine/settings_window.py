@@ -63,6 +63,66 @@ class ModifierChecks(QGroupBox):
         settings.save()
 
 
+def _key_name(key: int) -> str | None:
+    """Map a Qt key code to the token used by ``settings.parse_hotkey``."""
+    letters = (int(Qt.Key.Key_A), int(Qt.Key.Key_Z))
+    digits = (int(Qt.Key.Key_0), int(Qt.Key.Key_9))
+    functions = (int(Qt.Key.Key_F1), int(Qt.Key.Key_F12))
+    if letters[0] <= key <= letters[1]:
+        return chr(key).lower()
+    if digits[0] <= key <= digits[1]:
+        return chr(key)
+    if functions[0] <= key <= functions[1]:
+        return f"f{key - functions[0] + 1}"
+    if key == int(Qt.Key.Key_Space):
+        return "space"
+    return None
+
+
+class HotkeyEdit(QLineEdit):
+    """Read-only recorder: press the desired combo to bind the sticky wheel."""
+
+    def __init__(self, key, parent=None):
+        super().__init__(parent)
+        self._key = key
+        self.setReadOnly(True)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self._refresh()
+
+    def _refresh(self):
+        self.setText(settings.hotkey_label(str(settings.get(self._key, ""))))
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key.Key_Escape:
+            self.clearFocus()
+            event.accept()
+            return
+        if event.key() in (Qt.Key.Key_Backspace, Qt.Key.Key_Delete):
+            settings.set(self._key, "")
+            settings.save()
+            self._refresh()
+            event.accept()
+            return
+        mods = set()
+        modifiers = event.modifiers()
+        if modifiers & Qt.KeyboardModifier.ControlModifier:
+            mods.add("ctrl")
+        if modifiers & Qt.KeyboardModifier.AltModifier:
+            mods.add("alt")
+        if modifiers & Qt.KeyboardModifier.ShiftModifier:
+            mods.add("shift")
+        if modifiers & Qt.KeyboardModifier.MetaModifier:
+            mods.add("win")
+        name = _key_name(int(event.key()))
+        if mods and name:
+            settings.set(self._key, settings.format_hotkey(mods, name))
+            settings.save()
+            self._refresh()
+            event.accept()
+            return
+        event.ignore()
+
+
 class _Row(QWidget):
     """A labelled combo row that can be filtered by the search box."""
 
@@ -203,6 +263,16 @@ class SettingsWindow(QWidget):
             i18n.tr("settings.wheels.tools"), "toolsWheelDragModifierMask")
         layout.addWidget(self._conversion_checks)
         layout.addWidget(self._tools_checks)
+
+        sticky_group = QGroupBox(i18n.tr("settings.wheels.sticky"))
+        sticky_layout = QVBoxLayout(sticky_group)
+        sticky_hint = QLabel(i18n.tr("settings.wheels.sticky_hint"))
+        sticky_hint.setWordWrap(True)
+        sticky_hint.setObjectName("dim")
+        sticky_layout.addWidget(sticky_hint)
+        self._sticky_edit = HotkeyEdit("wheelToggleHotkey")
+        sticky_layout.addWidget(self._sticky_edit)
+        layout.addWidget(sticky_group)
 
         sounds = QCheckBox(i18n.tr("settings.wheels.sound"))
         sounds.setChecked(bool(settings.get("soundsAndHapticsEnabled", True)))
