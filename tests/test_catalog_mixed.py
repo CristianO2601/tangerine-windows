@@ -3,8 +3,10 @@
 Before: picking files of different families (a photo plus a PDF, text plus a
 PDF...) produced an empty wheel because ``conversions_for`` bailed out unless
 every path shared one family, and ``tools_for`` only knew a couple of mixed
-pairs. Now the wheel offers the intersection of conversions every file can
-run and the union of batch tools that applies to at least one family.
+pairs. Now the wheel offers the union of the conversions each family can run
+(the first file's family leads the order) and the union of the batch tools
+that applies to at least one family; ``conversion_paths`` then keeps only the
+files a chosen target actually applies to.
 """
 
 from pathlib import Path
@@ -43,33 +45,76 @@ def _ids(tools) -> list[str]:
     return [tool.id for tool in tools]
 
 
-def test_mixed_image_and_pdf_offers_common_targets(monkeypatch):
+def test_mixed_image_and_pdf_offers_the_union(monkeypatch):
     monkeypatch.setattr(catalog, "available_engines", lambda: ENGINES)
     conversions = catalog.conversions_for(_paths("photo.jpg", "paper.pdf"))
-    assert _targets(conversions) == ["png", "docx"]
+    assert _targets(conversions) == [
+        "png",
+        "webp",
+        "avif",
+        "heic",
+        "tiff",
+        "pdf",
+        "docx",
+        "jpg",
+        "txt",
+    ]
 
 
-def test_mixed_image_and_text_offers_common_targets(monkeypatch):
+def test_mixed_image_and_text_offers_the_union(monkeypatch):
     monkeypatch.setattr(catalog, "available_engines", lambda: ENGINES)
     conversions = catalog.conversions_for(_paths("photo.jpg", "notes.txt"))
-    assert _targets(conversions) == ["png", "pdf"]
+    assert _targets(conversions) == [
+        "png",
+        "webp",
+        "avif",
+        "heic",
+        "tiff",
+        "pdf",
+        "docx",
+        "jpg",
+    ]
 
 
-def test_mixed_pdf_and_text_offers_common_targets(monkeypatch):
+def test_mixed_pdf_and_text_offers_the_union(monkeypatch):
     monkeypatch.setattr(catalog, "available_engines", lambda: ENGINES)
     conversions = catalog.conversions_for(_paths("paper.pdf", "notes.txt"))
-    assert _targets(conversions) == ["jpg", "png"]
+    assert _targets(conversions) == ["docx", "jpg", "png", "txt", "pdf"]
 
 
-def test_mixed_document_and_pdf_offers_common_targets(monkeypatch):
+def test_mixed_document_and_pdf_offers_the_union(monkeypatch):
     monkeypatch.setattr(catalog, "available_engines", lambda: ENGINES)
     conversions = catalog.conversions_for(_paths("report.docx", "paper.pdf"))
-    assert _targets(conversions) == ["txt", "jpg", "png"]
+    assert _targets(conversions) == ["txt", "pdf", "jpg", "png", "docx"]
 
 
-def test_mixed_selection_without_common_target_is_empty(monkeypatch):
+def test_mixed_archive_and_image_still_offers_targets(monkeypatch):
     monkeypatch.setattr(catalog, "available_engines", lambda: ENGINES)
-    assert catalog.conversions_for(_paths("photo.jpg", "bundle.zip")) == []
+    conversions = catalog.conversions_for(_paths("photo.jpg", "bundle.zip"))
+    assert _targets(conversions) == [
+        "png",
+        "webp",
+        "avif",
+        "heic",
+        "tiff",
+        "pdf",
+        "docx",
+        "tar",
+        "gz",
+        "rar",
+    ]
+
+
+def test_conversion_paths_filters_by_reachable_target(monkeypatch):
+    monkeypatch.setattr(catalog, "available_engines", lambda: ENGINES)
+    paths = _paths("photo.jpg", "paper.pdf")
+    assert catalog.conversion_paths("png", paths) == [
+        Path("photo.jpg"),
+        Path("paper.pdf"),
+    ]
+    assert catalog.conversion_paths("webp", paths) == [Path("photo.jpg")]
+    assert catalog.conversion_paths("txt", paths) == [Path("paper.pdf")]
+    assert catalog.conversion_paths("mp4", paths) == []
 
 
 def test_single_family_batch_tools_unchanged(monkeypatch):

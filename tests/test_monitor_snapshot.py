@@ -85,6 +85,7 @@ def rig(qapp, monkeypatch):
         lambda pos, files, mode: events.append(("sticky", files, mode))
     )
     monitor.wheelHidden.connect(lambda: events.append(("hidden",)))
+    monitor.stickyClicked.connect(lambda pos: events.append(("click", pos)))
     return {"monitor": monitor, "keys": keys, "state": state, "events": events}
 
 
@@ -181,3 +182,71 @@ def test_sticky_hotkey_pressed_again_closes_the_wheel(rig, qapp):
 
     assert monitor._sticky is False
     assert ("hidden",) in rig["events"]
+
+
+def test_sticky_pins_a_visible_wheel(rig, qapp):
+    monitor = rig["monitor"]
+    state = rig["state"]
+    state["files"] = ["a.jpg"]
+
+    rig["keys"].left = True
+    monitor._tick()
+    state["pos"] = QPoint(100, 180)
+    monitor._tick()
+    assert ("shown", ["a.jpg"], "conversion") in rig["events"]
+
+    rig["keys"].combo = True
+    monitor._tick()
+    assert monitor._sticky is True
+    rig["keys"].combo = False
+    monitor._tick()
+
+    rig["keys"].left = False
+    _release(monitor)
+    assert monitor._sticky is True
+    assert not any(event[0] == "hidden" for event in rig["events"])
+
+    rig["keys"].combo = True
+    monitor._tick()
+    assert monitor._sticky is False
+    assert ("hidden",) in rig["events"]
+
+
+def test_sticky_times_out(rig, qapp):
+    monitor = rig["monitor"]
+    rig["state"]["selection"] = ["a.jpg"]
+
+    rig["keys"].combo = True
+    monitor._tick()
+    assert _wait_until(
+        qapp, lambda: ("sticky", ["a.jpg"], "conversion") in rig["events"]
+    )
+
+    monitor._sticky_since = time.monotonic() - 20.0
+    monitor._tick()
+
+    assert monitor._sticky is False
+    assert ("hidden",) in rig["events"]
+
+
+def test_sticky_reports_outside_clicks(rig, qapp):
+    monitor = rig["monitor"]
+    rig["state"]["selection"] = ["a.jpg"]
+
+    rig["keys"].combo = True
+    monitor._tick()
+    assert _wait_until(
+        qapp, lambda: ("sticky", ["a.jpg"], "conversion") in rig["events"]
+    )
+    rig["keys"].combo = False
+    monitor._tick()
+
+    rig["keys"].left = True
+    monitor._tick()
+    assert any(event[0] == "click" for event in rig["events"])
+
+    rig["keys"].left = False
+    monitor._tick()
+    clicks = sum(1 for event in rig["events"] if event[0] == "click")
+    monitor._tick()
+    assert sum(1 for event in rig["events"] if event[0] == "click") == clicks

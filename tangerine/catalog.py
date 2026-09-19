@@ -277,19 +277,17 @@ def _subtitle_targets(exts: set[str]) -> list[str]:
 
 
 def _mixed_conversions(paths_: list[Path], families: set) -> list[Conversion]:
-    """Targets every family in a mixed selection can reach (intersection)."""
+    """Targets available for a mixed selection (union, first family first)."""
     if None in families:
         return []
     first = family_of(paths_[0])
     ordered = [first] + [f for f in sorted(families) if f != first]
-    maps: list[dict[str, Conversion]] = []
+    merged: dict[str, Conversion] = {}
     for family in ordered:
         subset = [p for p in paths_ if family_of(p) == family]
-        maps.append({c.target_ext: c for c in conversions_for(subset)})
-    common = set(maps[0])
-    for mapping in maps[1:]:
-        common &= set(mapping)
-    return [conv for target, conv in maps[0].items() if target in common]
+        for conv in conversions_for(subset):
+            merged.setdefault(conv.target_ext, conv)
+    return list(merged.values())
 
 
 def conversions_for(paths_: list[Path]) -> list[Conversion]:
@@ -509,3 +507,12 @@ def tool_paths(key: str, paths_: list[Path]) -> list[Path]:
     if families is None:
         return list(paths_)
     return [p for p in paths_ if family_of(p) in families]
+
+
+def conversion_paths(target_ext: str, paths_: list[Path]) -> list[Path]:
+    """Files of a mixed selection that can convert to ``target_ext``."""
+    return [
+        p
+        for p in paths_
+        if any(c.target_ext == target_ext for c in conversions_for([p]))
+    ]

@@ -51,6 +51,7 @@ LONG_PRESS_S = 0.7
 BUTTON_RELEASE_SAMPLES = 4  # consecutive "up" reads before a release counts
 SELECTION_SNAPSHOT_INTERVAL_S = 0.8
 SELECTION_SNAPSHOT_MAX_AGE_S = 4.0
+STICKY_TIMEOUT_S = 15.0  # a pinned wheel fades out after this much time
 
 
 def _is_down(vk: int) -> bool:
@@ -76,6 +77,7 @@ class DragMonitor(QObject):
     wheelRefreshed = Signal(str)
     keyboardTriggered = Signal(object, object, str)
     stickyTriggered = Signal(object, object, str)
+    stickyClicked = Signal(object)
 
     _selectionReady = Signal(object, object, str)
 
@@ -103,7 +105,9 @@ class DragMonitor(QObject):
         self._last_snapshot_poll = 0.0
         self._mods_prev: set[str] = set()
         self._sticky = False
+        self._sticky_since = 0.0
         self._toggle_down = False
+        self._toggle_pending = False
         self._selectionReady.connect(self.keyboardTriggered)
 
     def stop(self) -> None:
@@ -257,6 +261,18 @@ class DragMonitor(QObject):
         self._poll_keyboard(button)
         self._poll_toggle()
         if self._sticky:
+            cursor = self._cursor()
+            new_press = button and not self._button_down
+            self._button_down = button
+            if time.monotonic() - self._sticky_since > STICKY_TIMEOUT_S:
+                self._sticky = False
+                self._set_active(False)
+                if self._visible:
+                    self._visible = False
+                    self.wheelHidden.emit()
+                return
+            if new_press:
+                self.stickyClicked.emit(cursor)
             return
         if button and not self._button_down:
             self._button_down = True
@@ -365,36 +381,52 @@ class DragMonitor(QObject):
         ).start()
 
     def _poll_toggle(self) -> None:
-        """Configurable hotkey: open a sticky wheel that survives key release."""
+        """Configurable hotkey: open (or pin) a sticky wheel for the gesture."""
         combo = settings.parse_hotkey(settings.get("wheelToggleHotkey", ""))
         if combo is None:
             self._toggle_down = False
+            self._toggle_pending = False
             return
         mask, key_name = combo
         vk = _key_vk(key_name)
         if vk is None:
             self._toggle_down = False
+            self._toggle_pending = False
             return
         down = _is_down(vk) and mask <= self._held_modifiers()
-        pressed = down and not self._toggle_down
+        if down and not self._toggle_down:
+            # Latch the press: a single keystroke must never be dropped just
+            # because a COM read happens to be in flight this tick.
+            self._toggle_pending = True
         self._toggle_down = down
-        if not pressed:
+        if not self._toggle_pending:
             return
         if self._sticky:
+            self._toggle_pending = False
             self._sticky = False
             self._set_active(False)
             if self._visible:
                 self._visible = False
                 self.wheelHidden.emit()
             return
-        if self._selection_busy or self._visible:
+        if self._visible:
+            # Already showing for this gesture: keep it on screen instead of
+            # waiting for the keys to be released (the real "hold it" flow).
+            self._toggle_pending = False
+            self._sticky = True
+            self._sticky_since = time.monotonic()
+            self._set_active(True)
             return
+        if self._selection_busy:
+            return
+        self._toggle_pending = False
         hwnd = selection.foreground_explorer_hwnd()
         if hwnd is None:
             return
         mode = self._mode_for_current_modifiers() or "conversion"
         cursor = self._cursor()
         self._sticky = True
+        self._sticky_since = time.monotonic()
         self._set_active(True)
         self._selection_busy = True
 

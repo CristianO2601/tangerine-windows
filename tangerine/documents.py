@@ -19,7 +19,7 @@ from html.parser import HTMLParser
 from pathlib import Path
 from xml.etree import ElementTree
 
-from . import i18n
+from . import i18n, render
 from .engines import (
     Ctx, EngineError, _open_pdf_document, _pdf_mono_font, _render_pdf_pages,
     _unique, text_to_pdf, verify_writable,
@@ -471,10 +471,7 @@ img {{ max-width: 100%; }}
 
 def _markdown_to_html(path: Path, out_path: Path, ctx: Ctx) -> None:
     source = path.read_text("utf-8", errors="replace")
-    body = _render_markdown(source)
-    match = re.search(r"^#\s+(.+?)\s*$", source, re.MULTILINE)
-    title = _html.escape(match.group(1)) if match else _html.escape(path.stem)
-    out_path.write_text(_HTML_TEMPLATE.format(title=title, body=body), "utf-8")
+    out_path.write_text(render.markdown_to_html(source, path.stem), "utf-8")
     ctx.progress(1.0)
 
 
@@ -641,7 +638,32 @@ def _pptx_to_pdf(path: Path, out_path: Path, ctx: Ctx) -> None:
         raise
 
 
+def _render_pdf(path: Path, out_path: Path, ctx: Ctx) -> bool:
+    """Faithful HTML render (QtWebEngine); False falls back to legacy writers."""
+    ext = path.suffix.lower()
+    try:
+        if ext == ".md":
+            source = path.read_text("utf-8", errors="replace")
+            page = render.markdown_to_html(source, path.stem)
+        elif ext == ".docx":
+            page = render.docx_to_html(path, path.stem)
+        elif ext == ".xlsx":
+            page = render.xlsx_to_html(path, path.stem)
+        elif ext == ".csv":
+            page = render.csv_to_html(path)
+        else:
+            return False
+        if render.html_to_pdf(page, out_path):
+            ctx.progress(1.0)
+            return True
+    except Exception:
+        return False
+    return False
+
+
 def _write_pdf(path: Path, out_path: Path, ctx: Ctx) -> None:
+    if _render_pdf(path, out_path, ctx):
+        return
     ext = path.suffix.lower()
     if ext == ".docx":
         _docx_to_pdf(path, out_path, ctx)

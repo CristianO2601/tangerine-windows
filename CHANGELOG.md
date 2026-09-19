@@ -3,26 +3,33 @@
 ## 1.8.0 — 2026-09-18
 
 Selección múltiple de verdad (tipos mixtos y lotes), rueda fija con atajo
-configurable, navegación con la rueda del ratón y corrección del aviso de
-instancia duplicada.
+configurable y cierres múltiples, render fiel de documentos a PDF, navegación
+con la rueda del ratón y corrección del aviso de instancia duplicada.
 
 ### Novedades
 - **Selección múltiple real:** con archivos de tipos distintos la rueda ofrece
-  las conversiones comunes (intersección de destinos, p. ej. JPG+PDF → PNG y
-  DOCX; JPG+TXT → PNG y PDF); las herramientas por lotes (comprimir, collage,
-  merger, unir vídeo…) actúan sobre todos los archivos compatibles y filtran
-  por familia al aplicarse (`catalog.tool_paths`).
+  la unión de destinos de todas las familias (p. ej. JPG+PDF → PNG, DOCX, JPG,
+  TXT… nueve opciones) y al aplicar una conversión solo se procesan los
+  archivos compatibles (`catalog.conversion_paths`); las herramientas por lotes
+  (comprimir, collage, merge, unir vídeo…) actúan sobre todos los archivos
+  compatibles y filtran por familia al aplicarse (`catalog.tool_paths`).
 - **Arrastre que no pierde archivos:** un snapshot de la selección del
   Explorador (COM, en segundo plano) hidrata la lista cuando Windows entrega
   un único archivo en el portapapeles del arrastre (p. ej. Shift+clic), y
   `dragEnter` fusiona el payload colapsado con los archivos ya conocidos.
 - **Rueda fija (toggle):** `Ctrl+Shift+W` (configurable en Ajustes → Rueda)
   abre la rueda con la selección del Explorador y la mantiene abierta al
-  soltar las teclas: clic en un pétalo aplica, clic fuera o Escape cierra, y
-  la rueda del ratón mueve el foco. El flujo clásico de mantener Shift no
-  cambia.
+  soltar las teclas; pulsado durante un arrastre fija la rueda ya visible. Se
+  cierra de cinco formas: segundo combo, clic en un pétalo (aplica y cierra),
+  clic fuera de la rueda, Escape y auto-cierre tras 15 s sin uso. La rueda del
+  ratón mueve el foco y el flujo clásico de mantener Shift no cambia.
 - **Scroll sobre la rueda:** la rueda del ratón mueve el pétalo enfocado con
   envolvente.
+- **Render fiel de documentos:** DOCX, XLSX, CSV y Markdown → PDF se dibujan
+  con el motor HTML/CSS real (QtWebEngine `printToPdf`): encabezados, tablas,
+  listas y bloques de código con estilo (Pygments), sin volcados de texto
+  plano; si el motor no está disponible, se conserva el escritor anterior.
+  Markdown → HTML también usa este render.
 
 ### Correcciones
 - **Instancia duplicada:** el aviso de "ya en ejecución" usaba `showMessage`
@@ -31,11 +38,13 @@ instancia duplicada.
   ahora pasa `QSystemTrayIcon.MessageIcon.Information` + 5000 ms.
 
 ### Verificación
-- **144 pruebas** pytest, con 18 nuevas: catálogo mixto (intersección y
-  lotes), snapshot/hidratación del Explorador, rueda fija y atajo,
-  clic/scroll/cierre de la rueda. Además, prueba en vivo del atajo (aparece,
-  persiste al soltar y se cierra con el segundo combo) y de la lectura COM de
-  la selección.
+- **155 pruebas** pytest (1 omitida por diseño: el render real necesita
+  pantalla), con 29 nuevas: catálogo mixto (unión y lotes), snapshot/
+  hidratación del Explorador, rueda fija (pin, atajo, timeout, clic fuera),
+  clic/scroll/cierre de la rueda y builders de render (Markdown, DOCX, XLSX,
+  CSV). Además, verificación en vivo: atajo (aparece, persiste al soltar, pin
+  a mitad de arrastre, cierre por clic fuera y por timeout) y render fiel de
+  un Markdown real a PDF comprobado con pypdfium2.
 
 ## 1.7.1 — 2026-09-17
 

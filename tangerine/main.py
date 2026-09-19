@@ -11,7 +11,7 @@ from PySide6.QtCore import QLockFile, QObject, QTimer
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication, QMenu, QMessageBox, QSystemTrayIcon
 
-from . import actions, catalog, i18n, paths, settings, theme
+from . import actions, catalog, i18n, paths, render, settings, theme
 from .monitor import DragMonitor
 from .wheel import FanItem, TangerineWheel
 
@@ -67,6 +67,10 @@ def _warm_catalog() -> None:
         catalog.available_engines()
     except Exception:
         pass
+    try:
+        render.ensure_ready()
+    except Exception:
+        pass
 
 
 class Controller(QObject):
@@ -88,7 +92,8 @@ class Controller(QObject):
         self.monitor.wheelHidden.connect(self._hide_wheel)
         self.monitor.wheelRefreshed.connect(self._refresh_wheel)
         self.monitor.keyboardTriggered.connect(self._keyboard_wheel)
-        self.monitor.stickyTriggered.connect(self._show_wheel)
+        self.monitor.stickyTriggered.connect(self._sticky_wheel)
+        self.monitor.stickyClicked.connect(self._sticky_click)
         self.wheel.closed.connect(self.monitor.sticky_release)
 
         self.tray = QSystemTrayIcon(QIcon(str(paths.icon_path())), self)
@@ -172,6 +177,20 @@ class Controller(QObject):
         self._show_wheel(pos, files, mode)
         self.wheel.set_keyboard_mode(True)
 
+    def _sticky_wheel(self, pos, files, mode):
+        """Pinned wheel: shortcuts (Esc/arrows/Enter) and clicks stay live."""
+        self._show_wheel(pos, files, mode)
+        self.wheel.set_keyboard_mode(True)
+
+    def _sticky_click(self, pos):
+        """A click outside the pinned wheel puts it away."""
+        if not self.wheel.isVisible():
+            return
+        if self.wheel.frameGeometry().contains(pos):
+            return
+        self.monitor.notify_dropped()
+        self.wheel._close()
+
     def _refresh_wheel(self, mode):
         self._mode = mode
         self.wheel.set_mode(mode)
@@ -203,7 +222,15 @@ class Controller(QObject):
                 return
             window = actions.run_tool(subset, key, None, label)
         else:
-            window = actions.run_conversions(files, key, None, None)
+            # Mixed selections offer the union of targets; convert only the
+            # files whose family can actually reach the chosen one.
+            subset = [
+                str(p)
+                for p in catalog.conversion_paths(key, [Path(f) for f in files])
+            ]
+            if not subset:
+                return
+            window = actions.run_conversions(subset, key, None, None)
         self._track(window)
 
     def _track(self, window):
