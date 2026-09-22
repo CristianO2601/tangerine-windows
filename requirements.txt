@@ -17,6 +17,9 @@ openpyxl>=3.1
 python-pptx>=1.0
 striprtf>=0.0.26
 odfpy>=1.4
+# Faithful DOCX/XLSX rendering to HTML for PDF/JPG/PNG exports
+mammoth>=1.8
+xlsx2html>=0.5
 # Markdown rendering (md -> html/txt/pdf)
 Markdown>=3.5
 # QR codes and face detection

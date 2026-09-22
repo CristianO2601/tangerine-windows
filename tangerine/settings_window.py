@@ -142,10 +142,16 @@ def _combo(entry: _Row, key: str, choices: list[tuple[str, str]]):
     combo = entry.combo
     for value, label in choices:
         combo.addItem(label, value)
-    current = str(settings.get(key, ""))
-    index = combo.findData(current)
-    if index >= 0:
-        combo.setCurrentIndex(index)
+
+    def _sync():
+        index = combo.findData(str(settings.get(key, "")))
+        if index >= 0 and index != combo.currentIndex():
+            combo.blockSignals(True)
+            combo.setCurrentIndex(index)
+            combo.blockSignals(False)
+
+    _sync()
+    combo._tangerine_sync = _sync
 
     def _changed():
         settings.set(key, combo.currentData())
@@ -174,6 +180,21 @@ def _size_choices():
         ("2560", i18n.tr("settings.size.2560")),
         ("1920", i18n.tr("settings.size.1920")),
         ("1280", i18n.tr("settings.size.1280")),
+    ]
+
+
+def _page_size_choices():
+    return [
+        ("a4", i18n.tr("settings.formats.page_size.a4")),
+        ("letter", i18n.tr("settings.formats.page_size.letter")),
+    ]
+
+
+def _margin_choices():
+    return [
+        ("normal", i18n.tr("settings.formats.margins.normal")),
+        ("compact", i18n.tr("settings.formats.margins.compact")),
+        ("wide", i18n.tr("settings.formats.margins.wide")),
     ]
 
 
@@ -300,6 +321,7 @@ class SettingsWindow(QWidget):
         layout.addWidget(search)
 
         self._rows: list[_Row] = []
+        self._groups: list[tuple[QGroupBox, list[tuple[QWidget, str]]]] = []
 
         image_group = QGroupBox(i18n.tr("settings.formats.images"))
         image_layout = QVBoxLayout(image_group)
@@ -328,19 +350,65 @@ class SettingsWindow(QWidget):
                       "compress mp3 m4a bitrate")
         layout.addWidget(audio_group)
 
+        document_group = QGroupBox(i18n.tr("settings.formats.documents"))
+        document_layout = QVBoxLayout(document_group)
+        self._add_row(
+            document_layout, i18n.tr("settings.formats.page_size"),
+            "pdfPageSize", _page_size_choices(), "paper a4 letter print pdf")
+        self._add_row(
+            document_layout, i18n.tr("settings.formats.margins"),
+            "pdfMarginPreset", _margin_choices(), "margins print pdf paper")
+        self._page_numbers_box = QCheckBox(i18n.tr("settings.formats.page_numbers"))
+        self._page_numbers_box.setChecked(bool(settings.get("pdfPageNumbers", True)))
+
+        def _page_numbers_changed(checked):
+            settings.set("pdfPageNumbers", bool(checked))
+            settings.save()
+
+        self._page_numbers_box.toggled.connect(_page_numbers_changed)
+        document_layout.addWidget(self._page_numbers_box)
+        self._track(document_group, self._page_numbers_box, "page numbers numbering pdf")
+
+        documents_hint = QLabel(i18n.tr("settings.formats.documents_hint"))
+        documents_hint.setWordWrap(True)
+        documents_hint.setObjectName("dim")
+        document_layout.addWidget(documents_hint)
+        self._track(document_group, documents_hint, "documents pdf paper print margins")
+        layout.addWidget(document_group)
+
         def _filter(text):
             needle = text.strip().lower()
             for row in self._rows:
                 row.setVisible(not needle or needle in row.keywords)
+            for group, widgets in self._groups:
+                group_visible = False
+                for widget, keywords in widgets:
+                    matches = not needle or needle in keywords
+                    widget.setVisible(matches)
+                    group_visible = group_visible or matches
+                group.setVisible(group_visible)
 
         search.textChanged.connect(_filter)
         layout.addStretch(1)
         return page
 
-    def _add_row(self, parent_layout, label, key, choices, keywords=""):
+    def _track(self, group, widget, keywords=""):
+        text = str(getattr(widget, "keywords", keywords)).lower()
+        for known_group, widgets in self._groups:
+            if known_group is group:
+                widgets.append((widget, text))
+                return
+        self._groups.append((group, [(widget, text)]))
+
+    def _add_row(self, parent_layout, label, key, choices, keywords="", group=None):
         row = _make_row(label, key, choices, keywords)
         parent_layout.addWidget(row)
         self._rows.append(row)
+        if group is None:
+            group = parent_layout.parentWidget()
+        if isinstance(group, QGroupBox):
+            self._track(group, row)
+        return row
 
     def _about_tab(self):
         page = QWidget()
@@ -409,6 +477,15 @@ class SettingsWindow(QWidget):
         for checks in (getattr(self, "_conversion_checks", None), getattr(self, "_tools_checks", None)):
             if checks is not None:
                 checks._load()
+        for row in getattr(self, "_rows", []):
+            sync = getattr(row.combo, "_tangerine_sync", None)
+            if callable(sync):
+                sync()
+        box = getattr(self, "_page_numbers_box", None)
+        if box is not None:
+            box.blockSignals(True)
+            box.setChecked(bool(settings.get("pdfPageNumbers", True)))
+            box.blockSignals(False)
         self._sync_language_combo()
         self._sync_appearance_combo()
         theme.apply_app_theme()

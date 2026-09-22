@@ -18,7 +18,7 @@ from typing import Callable
 
 from PIL import Image, ImageOps
 
-from . import i18n, naming
+from . import i18n, naming, render
 from .catalog import (
     AUDIO_EXTS, FAMILY_ARCHIVE, FAMILY_AUDIO, FAMILY_DOC, FAMILY_GIF,
     FAMILY_IMAGE, FAMILY_PDF, FAMILY_SUB, FAMILY_TXT, FAMILY_VIDEO, GIF_EXTS,
@@ -717,14 +717,32 @@ def _pdf_mono_font(text: str) -> str:
     return chosen or "Courier"
 
 
-def text_to_pdf(text: str, out_path: Path, ctx: Ctx) -> Path:
-    """Write plain text to *out_path*: monospace, 54pt margins, wrapped to fit."""
-    from reportlab.lib.pagesizes import letter
+def text_to_pdf(
+    text: str, out_path: Path, ctx: Ctx, *, page_numbers: bool | None = None,
+) -> Path:
+    """Write plain text to *out_path* through the shared document pipeline.
+
+    The text keeps its monospace columns (``pre.plain``, wrapped to the page
+    width). If QtWebEngine is not ready yet it still produces a paginated
+    reportlab PDF with the same paper size and margins.
+    """
     from reportlab.pdfbase import pdfmetrics
     from reportlab.pdfgen import canvas as pdf_canvas
 
     ctx.status(i18n.tr("action.writing", name=out_path.name))
-    margin = 54.0
+    options = render.print_options()
+    html = render.plain_text_to_html(text, out_path.stem, options)
+    if render.html_to_pdf(
+        html, out_path, title=out_path.stem, options=options,
+        page_numbers=page_numbers,
+    ):
+        ctx.progress(1.0)
+        return out_path
+
+    page_width, page_height = render.page_size_points(options["page_size"])
+    left, top, right, bottom = render.margins_to_points(options["margins_mm"])
+    if page_numbers is None:
+        page_numbers = bool(options.get("page_numbers", True))
     font_size = 10.0
     leading = 13.5
     font_name = "Courier"
@@ -732,9 +750,9 @@ def text_to_pdf(text: str, out_path: Path, ctx: Ctx) -> Path:
         text.encode("latin-1")
     except UnicodeEncodeError:
         font_name = _pdf_mono_font(text)
-    width, height = letter
     char_width = pdfmetrics.stringWidth("M", font_name, font_size)
-    max_chars = max(20, int((width - 2 * margin) / char_width)) if char_width else 84
+    usable = page_width - left - right
+    max_chars = max(20, int(usable / char_width)) if char_width else 84
     wrapped: list[str] = []
     for raw_line in text.replace("\t", "    ").splitlines():
         line = raw_line
@@ -742,21 +760,23 @@ def text_to_pdf(text: str, out_path: Path, ctx: Ctx) -> Path:
             wrapped.append(line[:max_chars])
             line = line[max_chars:]
         wrapped.append(line)
-    pdf = pdf_canvas.Canvas(str(out_path), pagesize=letter)
+    pdf = pdf_canvas.Canvas(str(out_path), pagesize=(page_width, page_height))
     pdf.setFont(font_name, font_size)
-    y = height - margin
+    y = page_height - top
     for line in wrapped:
         if ctx.cancelled():
             pdf.save()
             out_path.unlink(missing_ok=True)
             raise EngineError(i18n.tr("err.cancelled"))
-        if y < margin:
+        if y < bottom:
             pdf.showPage()
             pdf.setFont(font_name, font_size)
-            y = height - margin
-        pdf.drawString(margin, y, line)
+            y = page_height - top
+        pdf.drawString(left, y, line)
         y -= leading
     pdf.save()
+    render.postprocess_pdf(
+        out_path, title=out_path.stem, page_numbers=bool(page_numbers))
     ctx.progress(1.0)
     return out_path
 

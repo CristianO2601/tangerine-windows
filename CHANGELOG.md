@@ -1,5 +1,51 @@
 # Changelog
 
+## 1.9.0 — 2026-09-21
+
+Márgenes, papel, numeración y metadatos en todas las salidas PDF, y render por
+HTML también para TXT, RTF, ODT y PPTX: cada conversión de documentos sale como
+un documento de verdad, no como un volcado de texto.
+
+### Novedades
+- **Márgenes y papel de impresión.** Las conversiones a PDF se imprimen con un
+  `QPageLayout` explícito (A4, 16 mm a los lados y 18 mm arriba/abajo) en lugar
+  del layout por defecto (márgenes 0), que pegaba el texto al borde y cortaba
+  los bloques de código. Aplica a DOCX, XLSX, CSV y Markdown, y también a las
+  salidas jpg/png, que pasan por el mismo PDF intermedio.
+- **Ajustes de impresión** (Ajustes → Formatos → **Documentos y PDF**): papel
+  A4/Carta, márgenes normales (16/18 mm), compactos (10/12 mm) o amplios
+  (25/20 mm) y numeración de páginas opcional; se aplican a todas las
+  conversiones de documentos a PDF, JPG y PNG.
+- **Numeración y metadatos:** cada PDF de varias páginas se sella con «1 / 3»
+  al pie y lleva Título, Autor, Creador y Productor («Tangerine 1.9.0»).
+- **Render HTML para TXT, RTF, ODT y PPTX:** el texto plano se compone con la
+  tipografía del render fiel (ya no Courier de 54 pt), RTF y ODT salen como
+  párrafos legibles y las presentaciones, como una página por diapositiva con
+  su número.
+- **CSS de impresión afinado:** títulos que no quedan cortados al pie, filas de
+  tabla enteras, cabecera de tabla repetida en cada página, viudas y huérfanas
+  controladas y salto de página antes de cada diapositiva.
+- **`@media screen`:** el HTML exportado (md→html) se lee bien en pantalla
+  —columna centrada de 46 rem, código con scroll horizontal y diapositivas con
+  separador en vez de saltos de página.
+- **Fallbacks alineados:** si QtWebEngine no está disponible, los escritores
+  reportlab usan el mismo papel y márgenes del preset y también numeran y
+  sellan metadatos.
+
+### Correcciones
+- Corregida la impresión a sangre del render fiel (1.8.0): el PDF ya no pega el
+  texto al borde ni corta los bloques de código y las tablas.
+- El render real se colgaba cuando se lanzaba desde el hilo de la interfaz; el
+  renderer ahora detecta el hilo y ejecuta el trabajo directo con su propio
+  bucle de eventos.
+
+### Verificación
+- Suite completa: **165 pruebas** (164 verdes, 1 omitida por diseño: el render
+  real necesita pantalla).
+- Render real comprobado con pypdfium2: A4 de 595 × 842 pt, tinta a 44 pt
+  (16 mm) del borde, «2 / 2» al pie y metadatos «Tangerine 1.9.0» en un PDF de
+  dos páginas generado desde un Markdown.
+
 ## 1.8.0 — 2026-09-18
 
 Selección múltiple de verdad (tipos mixtos y lotes), rueda fija con atajo

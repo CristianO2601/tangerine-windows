@@ -98,6 +98,11 @@ Each document source offers its own targets:
 | odt | txt, pdf, jpg, png |
 | epub | txt |
 
+Document exports render through the same HTML/CSS pipeline: PDF and JPG/PNG
+outputs honour the **Documents and PDF** settings (A4 or Letter paper, normal
+16/18 mm margins by default, optional page numbers) and the resulting PDF
+carries a real title and metadata.
+
 Office files (docx, xlsx, pptx) also offer **doc.compress** in the tools wheel:
 it rebuilds the file's ZIP container at maximum compression and keeps the
 original bytes when the rebuilt container would not be smaller.
@@ -182,6 +187,8 @@ opens it too). From there you can:
   long-press touch mode.
 - Toggle sound/haptic feedback and pick the fan theme.
 - Set default compression presets and sizes for images, video, and audio.
+- Choose the paper size, margin preset and page numbering used by every
+  document PDF/JPG/PNG export (Settings → Formats → Documents and PDF).
 - Search conversion defaults, open the settings folder, or restore defaults.
 - See detected FFmpeg/FFprobe/WinRAR paths, the settings file, and the log file
   on the **About** tab.
@@ -228,17 +235,20 @@ catalog routes to a real editor/job without falling back to a "not available"
 message box, and the settings file survives an atomic save/load round-trip and
 a corrupt-file recovery.
 
-The v1.7.0 verification run is fully green: **120 tests**, a tool-routing audit
-of **43/43** identifiers without fallbacks, **23/23** editor smoke dialogs,
-**11/11** copy-regression checks, **50/50** end-to-end conversion/tool cases
-and **38/38** document routes.
+The v1.9.0 verification run is fully green: **165 tests** (164 passing, one
+intentionally skipped — the end-to-end render needs a display), a tool-routing
+audit of **43/43** identifiers without fallbacks, **23/23** editor smoke
+dialogs, **11/11** copy-regression checks, **50/50** end-to-end conversion/tool
+cases and **38/38** document routes.
 
 ## Known limitations
 
 - **Windows 11 only.** The drag detection uses Win32/OLE APIs and is not
   portable to macOS or Linux.
-- **No installer or code signing.** Tangerine runs from source; Windows
-  SmartScreen may warn when you first launch it.
+- **Installer without code signing.** `packaging/build.ps1` builds a per-user
+  Inno Setup installer (`dist\Tangerine-<version>-Setup.exe`) next to the
+  portable ZIP, but the binaries are not signed, so Windows SmartScreen may
+  warn when you first launch them.
 - **No auto-update.** The "Check for Updates..." tray item only shows the
   version and points at manual updates.
 - **Audio Visualizer needs an audio track.** Video-only sources are not
@@ -247,9 +257,12 @@ and **38/38** document routes.
   OCR engine when `rapidocr-onnxruntime` is installed
   (`pip install -r requirements-ocr.txt`); without it, such PDFs cannot be
   exported to `.txt` and the app points at the install command.
-- **Document conversions are text-level.** docx→pdf and pptx→pdf keep basic
-  styling only: tables are rendered as text rows, and images, shapes, charts
-  and complex layout are not reproduced.
+- **Document fidelity varies by format.** Markdown, DOCX, XLSX and CSV render
+  through HTML/CSS (tables, code blocks and the images inside DOCX included)
+  with a real page layout: A4 or Letter paper, configurable margins and
+  optional page numbers. TXT, RTF and ODT print as readable paragraphs, while
+  PPTX is redrawn slide by slide, so complex layouts are approximate and
+  animations are not preserved.
 - **Only modern document formats.** Legacy binary Office files (.doc, .xls,
   .ppt) are not supported — the document family reads OOXML, ODF and plain
   formats (docx, xlsx, pptx, csv, rtf, md, odt, epub).
@@ -318,6 +331,10 @@ herramientas ganan pixelado en Censurar foto/vídeo, Añadir fondo completo
 completo (exposición, temperatura, vibrance, viñeta, grano y presets) y
 metadatos GPS de imagen (ver, editar o quitar ubicación).
 
+Desde la v1.9.0 las conversiones de documentos se imprimen con papel A4/Carta,
+márgenes configurables (16/18 mm por defecto) y numeración de páginas, y TXT,
+RTF, ODT y PPTX se componen por el mismo pipeline HTML que Markdown o DOCX.
+
 Es una reimplementación independiente para Windows de la *idea* de conversión
 por arrastre de la app macOS Tangerine (de thmmhnsn), **sin afiliación** con
 sus autores. Requiere Python 3.11+ (probado en 3.14), FFmpeg
@@ -330,10 +347,10 @@ Aplicaciones de inicio. También convierte documentos (docx, xlsx, pptx, csv,
 rtf, md, odt, epub) a txt/csv/xlsx/html/pdf/jpg/png según el formato, y
 comprime docx/xlsx/pptx con **doc.compress**. Licencia MIT para este código; el
 nombre y la idea pertenecen a los autores originales. Limitaciones honestas:
-solo Windows 11, sin instalador ni firma digital, sin actualización automática,
+solo Windows 11, con instalador por usuario pero sin firma digital, sin actualización automática,
 OCR opcional para PDF escaneados (`pip install -r requirements-ocr.txt`),
-conversiones de documentos a nivel de texto (sin fidelidad de maquetación
-compleja y sin formatos binarios antiguos `.doc`/`.xls`/`.ppt`), subtítulos
+fidelidad de documentos variable (Markdown/DOCX/XLSX/CSV por HTML/CSS, PPTX
+aproximado, sin formatos binarios antiguos `.doc`/`.xls`/`.ppt`), subtítulos
 también a nivel de texto (se pierden los ajustes de cue de WebVTT al pasar a
 SRT), interfaz en inglés o español (Ajustes → General; opción Sistema), y el
 visualizador de audio necesita una pista de audio.

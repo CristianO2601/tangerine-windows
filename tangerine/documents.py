@@ -17,6 +17,7 @@ import tempfile
 import zipfile
 from html.parser import HTMLParser
 from pathlib import Path
+from typing import Any
 from xml.etree import ElementTree
 
 from . import i18n, render
@@ -155,6 +156,12 @@ def _read_pptx_text(path: Path) -> str:
         parts.extend(bullets)
         parts.append("")
     return "\n".join(parts).strip()
+
+
+def _read_pptx_slides(path: Path) -> list[tuple[str, list[str]]]:
+    """(title, bullets) per slide, for the faithful-ish HTML/PDF render."""
+    presentation = _open_presentation(path)
+    return [_slide_text(slide) for slide in presentation.slides]
 
 
 def _read_rtf_text(path: Path) -> str:
@@ -380,7 +387,6 @@ def _rows_to_text(rows: list[list[str]]) -> str:
 
 def _rows_to_pdf(rows: list[list[str]], out_path: Path, ctx: Ctx) -> None:
     from reportlab.lib import colors
-    from reportlab.lib.pagesizes import letter
     from reportlab.lib.styles import ParagraphStyle
     from reportlab.platypus import Paragraph, SimpleDocTemplate, Table, TableStyle
 
@@ -405,7 +411,10 @@ def _rows_to_pdf(rows: list[list[str]], out_path: Path, ctx: Ctx) -> None:
             for cell in row
         ])
     columns = max(len(row) for row in rows) or 1
-    column_width = (letter[0] - 108.0) / columns
+    options = render.print_options()
+    page_width, page_height = render.page_size_points(options["page_size"])
+    left, top, right, bottom = render.margins_to_points(options["margins_mm"])
+    column_width = (page_width - left - right) / columns
     table = Table(data, colWidths=[column_width] * columns, repeatRows=1)
     table.setStyle(TableStyle([
         ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#BBBBBB")),
@@ -422,8 +431,8 @@ def _rows_to_pdf(rows: list[list[str]], out_path: Path, ctx: Ctx) -> None:
             raise EngineError(i18n.tr("err.cancelled"))
 
     document = SimpleDocTemplate(
-        str(out_path), pagesize=letter,
-        leftMargin=54, rightMargin=54, topMargin=54, bottomMargin=54,
+        str(out_path), pagesize=(page_width, page_height),
+        leftMargin=left, rightMargin=right, topMargin=top, bottomMargin=bottom,
         title=out_path.stem,
     )
     try:
@@ -434,39 +443,11 @@ def _rows_to_pdf(rows: list[list[str]], out_path: Path, ctx: Ctx) -> None:
     except Exception as exc:
         out_path.unlink(missing_ok=True)
         raise EngineError(i18n.tr("err.doc_pdf_failed")) from exc
+    render.postprocess_pdf(
+        out_path, title=out_path.stem,
+        page_numbers=bool(options.get("page_numbers", True)),
+    )
     ctx.progress(1.0)
-
-
-_HTML_TEMPLATE = """<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{title}</title>
-<style>
-body {{ max-width: 46rem; margin: 3rem auto; padding: 0 1.25rem;
-       font: 16px/1.65 Georgia, "Times New Roman", serif; color: #1f2328; }}
-h1, h2, h3 {{ font-family: "Segoe UI", Arial, sans-serif; line-height: 1.25; }}
-h1 {{ font-size: 2rem; }}
-h2 {{ font-size: 1.5rem; }}
-h3 {{ font-size: 1.2rem; }}
-code, pre {{ font-family: Consolas, "Courier New", monospace; font-size: 0.9em; }}
-pre {{ background: #f6f8fa; padding: 0.8rem 1rem; border-radius: 6px; overflow-x: auto; }}
-code {{ background: #f6f8fa; padding: 0.1rem 0.3rem; border-radius: 4px; }}
-pre code {{ background: none; padding: 0; }}
-blockquote {{ margin: 1rem 0; padding: 0.2rem 1rem; border-left: 4px solid #d0d7de;
-             color: #57606a; }}
-table {{ border-collapse: collapse; }}
-th, td {{ border: 1px solid #d0d7de; padding: 0.35rem 0.6rem; }}
-a {{ color: #0969da; }}
-img {{ max-width: 100%; }}
-</style>
-</head>
-<body>
-{body}
-</body>
-</html>
-"""
 
 
 def _markdown_to_html(path: Path, out_path: Path, ctx: Ctx) -> None:
@@ -482,16 +463,25 @@ def _markdown_to_html(path: Path, out_path: Path, ctx: Ctx) -> None:
 class _TextFlow:
     """A minimal flowing-text canvas: wrapping, page breaks, mono fallbacks."""
 
-    def __init__(self, out_path: Path, ctx: Ctx) -> None:
-        from reportlab.lib.pagesizes import letter
+    def __init__(
+        self, out_path: Path, ctx: Ctx,
+        options: dict[str, Any] | None = None,
+    ) -> None:
         from reportlab.pdfgen import canvas as pdf_canvas
 
         self._ctx = ctx
         self._out_path = out_path
-        self.page_width, self.page_height = letter
-        self.margin = 54.0
-        self._pdf = pdf_canvas.Canvas(str(out_path), pagesize=letter)
-        self._y = self.page_height - self.margin
+        options = options or render.print_options()
+        self._page_numbers = bool(options.get("page_numbers", True))
+        self.page_width, self.page_height = render.page_size_points(options["page_size"])
+        left, top, right, bottom = render.margins_to_points(options["margins_mm"])
+        self.left_margin = left
+        self.right_margin = right
+        self.top_margin = top
+        self.bottom_margin = bottom
+        self._pdf = pdf_canvas.Canvas(
+            str(out_path), pagesize=(self.page_width, self.page_height))
+        self._y = self.page_height - self.top_margin
         self._finished = False
 
     def _font_for(self, text: str, bold: bool) -> str:
@@ -504,7 +494,7 @@ class _TextFlow:
     def _wrapped(self, text: str, font: str, size: float, indent: float) -> list[str]:
         from reportlab.pdfbase import pdfmetrics
 
-        available = self.page_width - 2 * self.margin - indent
+        available = self.page_width - self.left_margin - self.right_margin - indent
         char_width = pdfmetrics.stringWidth("M", font, size)
         max_chars = max(10, int(available / char_width)) if char_width else 84
         lines: list[str] = []
@@ -530,22 +520,26 @@ class _TextFlow:
         font = self._font_for(text, bold)
         self._y -= space_before
         for line in self._wrapped(text, font, size, indent):
-            if self._y - leading < self.margin:
+            if self._y - leading < self.bottom_margin:
                 self._pdf.showPage()
-                self._y = self.page_height - self.margin
+                self._y = self.page_height - self.top_margin
             self._pdf.setFillColorRGB(*color)
             self._pdf.setFont(font, size)
-            self._pdf.drawString(self.margin + indent, self._y - size, line)
+            self._pdf.drawString(self.left_margin + indent, self._y - size, line)
             self._y -= leading
         self._y -= space_after
 
     def page_break(self) -> None:
         self._pdf.showPage()
-        self._y = self.page_height - self.margin
+        self._y = self.page_height - self.top_margin
 
     def finish(self) -> None:
         self._pdf.save()
         self._finished = True
+        render.postprocess_pdf(
+            self._out_path, title=self._out_path.stem,
+            page_numbers=self._page_numbers,
+        )
 
     def discard(self) -> None:
         if self._finished:
@@ -638,22 +632,37 @@ def _pptx_to_pdf(path: Path, out_path: Path, ctx: Ctx) -> None:
         raise
 
 
-def _render_pdf(path: Path, out_path: Path, ctx: Ctx) -> bool:
+def _render_pdf(
+    path: Path, out_path: Path, ctx: Ctx, *, page_numbers: bool = True,
+) -> bool:
     """Faithful HTML render (QtWebEngine); False falls back to legacy writers."""
     ext = path.suffix.lower()
+    options = render.print_options()
     try:
         if ext == ".md":
             source = path.read_text("utf-8", errors="replace")
-            page = render.markdown_to_html(source, path.stem)
+            page = render.markdown_to_html(source, path.stem, options)
         elif ext == ".docx":
-            page = render.docx_to_html(path, path.stem)
+            page = render.docx_to_html(path, path.stem, options)
         elif ext == ".xlsx":
-            page = render.xlsx_to_html(path, path.stem)
+            page = render.xlsx_to_html(path, path.stem, options)
         elif ext == ".csv":
-            page = render.csv_to_html(path)
+            page = render.csv_to_html(path, path.stem, options)
+        elif ext == ".rtf":
+            page = render.paragraphs_to_html(_read_rtf_text(path), path.stem, options)
+        elif ext == ".odt":
+            page = render.paragraphs_to_html(_read_odt_text(path), path.stem, options)
+        elif ext == ".pptx":
+            slides = _read_pptx_slides(path)
+            if not slides:
+                return False
+            page = render.slides_to_html(slides, path.stem, options)
         else:
             return False
-        if render.html_to_pdf(page, out_path):
+        if render.html_to_pdf(
+            page, out_path, title=path.stem, options=options,
+            page_numbers=page_numbers,
+        ):
             ctx.progress(1.0)
             return True
     except Exception:
@@ -661,8 +670,10 @@ def _render_pdf(path: Path, out_path: Path, ctx: Ctx) -> bool:
     return False
 
 
-def _write_pdf(path: Path, out_path: Path, ctx: Ctx) -> None:
-    if _render_pdf(path, out_path, ctx):
+def _write_pdf(
+    path: Path, out_path: Path, ctx: Ctx, *, page_numbers: bool = True,
+) -> None:
+    if _render_pdf(path, out_path, ctx, page_numbers=page_numbers):
         return
     ext = path.suffix.lower()
     if ext == ".docx":
@@ -675,7 +686,7 @@ def _write_pdf(path: Path, out_path: Path, ctx: Ctx) -> None:
         text = _read_text(path, ctx)
         if not text.strip():
             raise EngineError(i18n.tr("err.doc_no_text"))
-        text_to_pdf(text, out_path, ctx)
+        text_to_pdf(text, out_path, ctx, page_numbers=page_numbers)
 
 
 def _document_to_images(
@@ -684,7 +695,7 @@ def _document_to_images(
     tmp_dir = Path(tempfile.mkdtemp(prefix="tangerine_doc_"))
     tmp_pdf = tmp_dir / "document.pdf"
     try:
-        _write_pdf(path, tmp_pdf, ctx)
+        _write_pdf(path, tmp_pdf, ctx, page_numbers=False)
         try:
             pdf = _open_pdf_document(tmp_pdf)
         except EngineError as exc:

@@ -37,6 +37,9 @@ DEFAULTS: dict[str, Any] = {
     "collageFit": "fill",
     "joinVideosFPSCap": 30,
     "videoCompressionAccurate": True,
+    "pdfPageSize": "a4",
+    "pdfMarginPreset": "normal",
+    "pdfPageNumbers": True,
     "welcomeShown": False,
 }
 
@@ -45,6 +48,10 @@ _cache: dict[str, Any] | None = None
 
 APPEARANCE_DEFAULT = "system"
 APPEARANCE_VALUES = ("system", "light", "dark")
+
+#: Paper and margin keys must mirror ``render.PAGE_SIZES_MM``/``MARGIN_PRESETS_MM``.
+PAGE_SIZE_VALUES = ("a4", "letter")
+MARGIN_PRESET_VALUES = ("normal", "compact", "wide")
 
 
 def appearance_theme() -> str:
@@ -94,8 +101,14 @@ def _normalize(key: str, value: Any) -> Any:
     if key == "appearanceTheme":
         text = str(value or "").lower()
         return text if text in APPEARANCE_VALUES else APPEARANCE_DEFAULT
-    if key == "touchLongPressEnabled":
+    if key in ("touchLongPressEnabled", "pdfPageNumbers", "welcomeShown"):
         return bool(value)
+    if key == "pdfPageSize":
+        text = str(value or "").lower()
+        return text if text in PAGE_SIZE_VALUES else DEFAULTS["pdfPageSize"]
+    if key == "pdfMarginPreset":
+        text = str(value or "").lower()
+        return text if text in MARGIN_PRESET_VALUES else DEFAULTS["pdfMarginPreset"]
     return value
 
 

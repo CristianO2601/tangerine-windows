@@ -165,6 +165,19 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "settings.formats.audio": "Audio",
         "settings.formats.preset": "Compression preset",
         "settings.formats.size": "Compression size",
+        "settings.formats.documents": "Documents and PDF",
+        "settings.formats.page_size": "Paper size",
+        "settings.formats.page_size.a4": "A4 (210 × 297 mm)",
+        "settings.formats.page_size.letter": "Letter (216 × 279 mm)",
+        "settings.formats.margins": "Margins",
+        "settings.formats.margins.normal": "Normal (16 / 18 mm)",
+        "settings.formats.margins.compact": "Compact (10 / 12 mm)",
+        "settings.formats.margins.wide": "Wide (25 / 20 mm)",
+        "settings.formats.page_numbers": "Add page numbers to PDF files",
+        "settings.formats.documents_hint": (
+            "Applies to every document conversion to PDF, JPG or PNG: Markdown, "
+            "DOCX, XLSX, CSV, RTF, ODT, PPTX and TXT."
+        ),
         "settings.strength.balanced": "Balanced",
         "settings.strength.strong": "Strong",
         "settings.size.original": "Original dimensions",
@@ -781,6 +794,19 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "settings.formats.audio": "Audio",
         "settings.formats.preset": "Ajuste de compresión",
         "settings.formats.size": "Tamaño de compresión",
+        "settings.formats.documents": "Documentos y PDF",
+        "settings.formats.page_size": "Tamaño de papel",
+        "settings.formats.page_size.a4": "A4 (210 × 297 mm)",
+        "settings.formats.page_size.letter": "Carta (216 × 279 mm)",
+        "settings.formats.margins": "Márgenes",
+        "settings.formats.margins.normal": "Normales (16 / 18 mm)",
+        "settings.formats.margins.compact": "Compactos (10 / 12 mm)",
+        "settings.formats.margins.wide": "Amplios (25 / 20 mm)",
+        "settings.formats.page_numbers": "Añadir números de página a los PDF",
+        "settings.formats.documents_hint": (
+            "Se aplica a todas las conversiones de documentos a PDF, JPG o PNG: "
+            "Markdown, DOCX, XLSX, CSV, RTF, ODT, PPTX y TXT."
+        ),
         "settings.strength.balanced": "Equilibrado",
         "settings.strength.strong": "Fuerte",
         "settings.size.original": "Dimensiones originales",

@@ -1,6 +1,6 @@
 # Inventario de funciones — Tangerine para Windows
 
-Versión **1.7.0**. Estado verificado: auditoría de rutas **43/43 OK**, suite completa **120/120**, smoke de editores **23/23**, regresión de arrastre **11/11**, extremo a extremo **50/50**, rutas de documentos **38/38**.
+Versión **1.9.0**. Estado verificado: auditoría de rutas **43/43 OK**, suite completa **165 pruebas (164 verdes, 1 omitida por diseño)**, smoke de editores **23/23**, regresión de arrastre **11/11**, extremo a extremo **50/50**, rutas de documentos **38/38**.
 
 ## Cómo funciona
 
@@ -53,9 +53,11 @@ Los subtítulos no necesitan motor externo: la codificación se detecta de forma
 | odt | txt, pdf, jpg, png |
 | epub | txt |
 
+Las salidas **pdf/jpg/png** de docx, xlsx, csv, md, rtf, odt y pptx se renderizan como HTML/CSS (QtWebEngine) y se imprimen con las opciones de **Ajustes → Formatos → Documentos y PDF**: papel A4 o Carta, márgenes normales/compactos/amplios y numeración de páginas opcional; el PDF resultante lleva título y metadatos de Tangerine. Las salidas jpg/png pasan por el mismo PDF intermedio a 300 ppp.
+
 La herramienta **doc.compress** (Alt+Shift) recomprime el contenedor ZIP de docx, xlsx y pptx; si el resultado no queda más pequeño, conserva una copia del original.
 
-**Nota honesta:** las conversiones de documentos trabajan a nivel de texto. docx→pdf y pptx→pdf conservan estilos básicos (las tablas van como filas de texto) y no reproducen imágenes, formas, gráficos ni fidelidad de maquetación compleja; xlsx lee solo la hoja activa (valores en caché); doc→jpg/png se renderiza mediante un PDF intermedio a 300 ppp. Los formatos binarios antiguos (.doc/.xls/.ppt) no son compatibles: solo OOXML/ODF/texto.
+**Nota honesta:** Markdown, DOCX, XLSX y CSV se renderizan como HTML/CSS (títulos, tablas, código y las imágenes de DOCX incluidas) y se imprimen a PDF con papel, márgenes y numeración configurables; TXT, RTF y ODT salen como párrafos legibles, y PPTX como una página por diapositiva con maquetación **aproximada** (sin animaciones ni posición exacta de formas). xlsx lee solo la hoja activa (valores en caché); doc→jpg/png se renderiza mediante un PDF intermedio a 300 ppp. Los formatos binarios antiguos (.doc/.xls/.ppt) no son compatibles: solo OOXML/ODF/texto.
 
 ## Herramientas (Alt+Shift)
 
@@ -77,11 +79,12 @@ La herramienta **doc.compress** (Alt+Shift) recomprime el contenedor ZIP de docx
 
 ## Idioma (i18n)
 
-Interfaz en **inglés** y **español** (480 claves por idioma) elegible en **Ajustes → General → Idioma**; la opción **Sistema** sigue el idioma de Windows (`es_MX` → español) y recurre al inglés si no está soportado. El cambio se aplica al instante en la bandeja (menú y tooltip) y en la rueda; las ventanas ya abiertas lo aplican al reabrirse. Cobertura: rueda de conversiones y herramientas, bandeja, ajustes, los 20 diálogos de editor, ventanas de progreso y los errores comunes de motores/herramientas (los nombres de archivo, códigos y rutas no se traducen).
+Interfaz en **inglés** y **español** (492 claves por idioma) elegible en **Ajustes → General → Idioma**; la opción **Sistema** sigue el idioma de Windows (`es_MX` → español) y recurre al inglés si no está soportado. El cambio se aplica al instante en la bandeja (menú y tooltip) y en la rueda; las ventanas ya abiertas lo aplican al reabrirse. Cobertura: rueda de conversiones y herramientas, bandeja, ajustes, los 20 diálogos de editor, ventanas de progreso y los errores comunes de motores/herramientas (los nombres de archivo, códigos y rutas no se traducen).
 
 ## Verificación
 
-- Suite completa: **120/120** pruebas, incluida paridad i18n en/es, formatos v1.7.0 (AVIF, audio, vídeo, subtítulos), pixelado, fondo completo, edición de foto, GPS, teclado de la rueda y memoria de lienzos.
+- Suite completa: **165 pruebas (164 verdes, 1 omitida por diseño)**, incluida paridad i18n en/es, formatos v1.7.0 (AVIF, audio, vídeo, subtítulos), pixelado, fondo completo, edición de foto, GPS, teclado de la rueda, memoria de lienzos y el pipeline de impresión v1.9.0 (papel, márgenes, numeración, metadatos y render HTML de TXT/RTF/ODT/PPTX).
+- Render real comprobado (pypdfium2): PDF A4 de 595 × 842 pt desde Markdown, tinta a 44 pt (16 mm) del borde, «2 / 2» al pie y metadatos «Tangerine 1.9.0».
 - Auditoría de rutas: las **43/43** herramientas abren su editor o ejecutan su proceso, sin mensajes de "no disponible".
 - Smoke de editores: **23/23** diálogos se construyen en modo offscreen.
 - Regresión del arrastre: **11/11** — soltar fuerza siempre una **copia** y rechaza orígenes que solo permiten mover.
@@ -90,12 +93,12 @@ Interfaz en **inglés** y **español** (480 claves por idioma) elegible en **Aju
 - Comprimir PDF verificado: notas.pdf 1 580 → 1 154 B; PDF de 30 páginas 27 956 → 27 408 B.
 - Revisión de calidad y estabilidad (1.4.1): corregidos todos los hallazgos bloqueantes e importantes — seguridad al crear RAR, fotos rotadas (EXIF) en recorte/censura, censura de vídeo verificada, fusión de PDFs sin sobrescritura, cancelación real con limpieza, guardado atómico de ajustes, instancia única, y mejoras de memoria y rendimiento. Detalles en `CHANGELOG.md`.
 
-## Novedades de esta versión (1.7.0)
+## Novedades de esta versión (1.9.0)
 
-- **HUD con paridad visual:** superficies de material translúcido (captura del escritorio + desenfoque + lavado), rueda rediseñada (cuñas redondeadas, halo, etiqueta grande en conversión, iconos de línea en herramientas, hover naranja 120 ms, cápsula central, aparición ~250 ms y despedida ~160 ms), tarjeta de progreso nueva y ventanas de editor con cabecera propia, sliders naranja con thumb blanco y botón Apply.
-- **Apariencia:** **Ajustes → General → Apariencia** (Sistema/Claro/Oscuro, ajuste `appearanceTheme`, cambio en vivo).
-- **Formatos:** AVIF (imagen, leer y escribir), audio OGG/Opus/AIFF/WMA, vídeo WebM/AVI/WMV (y `.wmv` como origen) y familia **Subtítulos** (srt↔vtt, ambos →txt).
-- **Herramientas:** pixelado (mosaico 12 px) en Censurar foto y Censurar vídeo; Añadir fondo completo (color/degradado con ángulo/imagen, aspecto, margen y esquinas redondeadas); Editar foto completo (exposición, contraste, saturación, temperatura, vibrance, nitidez, viñeta, grano + presets); metadatos de ubicación GPS (ver/editar/quitar latitud, longitud y altitud; solo imágenes).
-- **Interacción:** teclado con la rueda visible (flechas con wrap, Enter aplica, Escape cancela), **Shift+Enter** en el Explorador para abrir la rueda con la selección actual, y modo táctil opcional de pulsación larga ≥700 ms (`touchLongPressEnabled`, desactivado por defecto).
-- **Correcciones:** herramientas de imagen con AVIF/BMP; la ubicación GPS se conserva al guardar metadatos.
-- **Verificación:** 120 pruebas, 43/43 rutas, 23/23 diálogos, 11/11 copia, 50/50 e2e, 38/38 documentos y compresión de PDF comprobada.
+La 1.8.0 ya había traído el render fiel de DOCX/XLSX/CSV/Markdown, la selección múltiple real de tipos mixtos y la rueda fija con `Ctrl+Shift+W`; esta versión pule la impresión y la extiende a más formatos.
+
+- **Impresión:** papel A4/Carta, márgenes normales (16/18 mm), compactos (10/12 mm) o amplios (25/20 mm) y numeración de páginas opcional en **Ajustes → Formatos → Documentos y PDF**; se aplican a todas las salidas PDF/JPG/PNG de documentos.
+- **PDF con oficio:** numeración «1 / 3» al pie y metadatos (Título, Autor, Creador, Productor) en cada PDF generado.
+- **Más formatos por el pipeline HTML:** TXT (antes Courier 54 pt), RTF, ODT y PPTX (una página por diapositiva) se componen como HTML/CSS.
+- **Tipografía de impresión:** títulos sin cortes, filas de tabla enteras, cabecera repetida, viudas/huérfanas controladas y `@media screen` para que el HTML exportado también se lea en pantalla.
+- **Verificación:** 165 pruebas y comprobación real con pypdfium2 (A4, márgenes de 16 mm, numeración y metadatos).
