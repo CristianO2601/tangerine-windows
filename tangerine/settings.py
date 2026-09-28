@@ -42,6 +42,7 @@ DEFAULTS: dict[str, Any] = {
     "pdfPageSize": "a4",
     "pdfMarginPreset": "normal",
     "pdfPageNumbers": True,
+    "suppressInFullscreen": True,
     "welcomeShown": False,
 }
 
@@ -103,7 +104,7 @@ def _normalize(key: str, value: Any) -> Any:
     if key == "appearanceTheme":
         text = str(value or "").lower()
         return text if text in APPEARANCE_VALUES else APPEARANCE_DEFAULT
-    if key in ("touchLongPressEnabled", "pdfPageNumbers", "welcomeShown"):
+    if key in ("touchLongPressEnabled", "pdfPageNumbers", "suppressInFullscreen", "welcomeShown"):
         return bool(value)
     if key == "pdfPageSize":
         text = str(value or "").lower()

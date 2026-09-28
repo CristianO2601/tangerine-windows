@@ -255,6 +255,23 @@ class SettingsWindow(QWidget):
         appearance_hint.setWordWrap(True)
         appearance_hint.setObjectName("dim")
         layout.addWidget(appearance_hint)
+
+        self._fullscreen_box = QCheckBox(i18n.tr("settings.general.fullscreen"))
+        self._fullscreen_box.setChecked(
+            bool(settings.get("suppressInFullscreen", True))
+        )
+
+        def _fullscreen_changed(checked):
+            settings.set("suppressInFullscreen", bool(checked))
+            settings.save()
+
+        self._fullscreen_box.toggled.connect(_fullscreen_changed)
+        layout.addWidget(self._fullscreen_box)
+
+        fullscreen_hint = QLabel(i18n.tr("settings.general.fullscreen_hint"))
+        fullscreen_hint.setWordWrap(True)
+        fullscreen_hint.setObjectName("dim")
+        layout.addWidget(fullscreen_hint)
         layout.addStretch(1)
         return page
 
@@ -485,6 +502,11 @@ class SettingsWindow(QWidget):
         if box is not None:
             box.blockSignals(True)
             box.setChecked(bool(settings.get("pdfPageNumbers", True)))
+            box.blockSignals(False)
+        box = getattr(self, "_fullscreen_box", None)
+        if box is not None:
+            box.blockSignals(True)
+            box.setChecked(bool(settings.get("suppressInFullscreen", True)))
             box.blockSignals(False)
         self._sync_language_combo()
         self._sync_appearance_combo()

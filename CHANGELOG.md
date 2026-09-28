@@ -1,5 +1,40 @@
 # Changelog
 
+## 1.9.1 — 2026-09-27
+
+La rueda ya no aparece sobre videojuegos ni aplicaciones a pantalla completa:
+el gesto de arrastre (Shift + ratón) también es un mando de juego y no hay
+nada que soltar encima de una ventana que cubre el escritorio.
+
+### Novedades
+- **Ocultar la rueda en juegos y aplicaciones a pantalla completa** (Ajustes →
+  General), activado por defecto; desactívalo si alguna aplicación concreta
+  necesita la rueda.
+
+### Correcciones
+- **Puerta de contexto del primer plano.** Antes de mostrar la rueda (y con la
+  rueda fija) se consulta el contexto: las superficies del shell (Explorador,
+  escritorio, barra de tareas) y las ventanas propias nunca se bloquean; se
+  bloquean las clases de motores conocidos (Unity, Unreal, SDL, GLFW, LWJGL,
+  Valve, Riot, GameMaker, Prism3D…), los estados de `SHQueryUserNotificationState`
+  1–4 (sesión bloqueada, escritorio ocupado o presentación, Direct3D exclusivo,
+  modo presentación) y las ventanas que cubren su monitor sin estar simplemente
+  maximizadas.
+- **Ni demasiado estricta:** las ventanas maximizadas siguen permitidas —aunque
+  ocupen toda el área de trabajo con la barra de tareas autooculta—, la
+  tolerancia geométrica es del 1 % (~11 px en 1080p) y cualquier fallo de la
+  sonda deja la rueda activa.
+- La rueda se oculta sola si una aplicación a pantalla completa toma el primer
+  plano mientras está visible o fija.
+
+### Verificación
+- Suite completa: **181 pruebas** (180 verdes, 1 omitida por diseño: el render
+  real necesita pantalla), incluidas 14 pruebas nuevas de la puerta de contexto
+  y 2 de integración con el monitor.
+- Comprobación empírica en Windows 11: una ventana maximizada no se bloquea
+  (`QUNS=5`, `SW_SHOWMAXIMIZED`); una ventana sin bordes que cubre el monitor
+  no reporta `QUNS` ocupado (5) y se detecta por geometría.
+
 ## 1.9.0 — 2026-09-21
 
 Márgenes, papel, numeración y metadatos en todas las salidas PDF, y render por

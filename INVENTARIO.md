@@ -1,6 +1,6 @@
 # Inventario de funciones — Tangerine para Windows
 
-Versión **1.9.0**. Estado verificado: auditoría de rutas **43/43 OK**, suite completa **165 pruebas (164 verdes, 1 omitida por diseño)**, smoke de editores **23/23**, regresión de arrastre **11/11**, extremo a extremo **50/50**, rutas de documentos **38/38**.
+Versión **1.9.1**. Estado verificado: auditoría de rutas **43/43 OK**, suite completa **181 pruebas (180 verdes, 1 omitida por diseño)**, smoke de editores **23/23**, regresión de arrastre **11/11**, extremo a extremo **50/50**, rutas de documentos **38/38**.
 
 ## Cómo funciona
 
@@ -83,7 +83,7 @@ Interfaz en **inglés** y **español** (492 claves por idioma) elegible en **Aju
 
 ## Verificación
 
-- Suite completa: **165 pruebas (164 verdes, 1 omitida por diseño)**, incluida paridad i18n en/es, formatos v1.7.0 (AVIF, audio, vídeo, subtítulos), pixelado, fondo completo, edición de foto, GPS, teclado de la rueda, memoria de lienzos y el pipeline de impresión v1.9.0 (papel, márgenes, numeración, metadatos y render HTML de TXT/RTF/ODT/PPTX).
+- Suite completa: **181 pruebas (180 verdes, 1 omitida por diseño)**, incluida paridad i18n en/es, formatos v1.7.0 (AVIF, audio, vídeo, subtítulos), pixelado, fondo completo, edición de foto, GPS, teclado de la rueda, memoria de lienzos, el pipeline de impresión v1.9.0 (papel, márgenes, numeración, metadatos y render HTML de TXT/RTF/ODT/PPTX) y la puerta de contexto v1.9.1 (juegos y pantalla completa).
 - Render real comprobado (pypdfium2): PDF A4 de 595 × 842 pt desde Markdown, tinta a 44 pt (16 mm) del borde, «2 / 2» al pie y metadatos «Tangerine 1.9.0».
 - Auditoría de rutas: las **43/43** herramientas abren su editor o ejecutan su proceso, sin mensajes de "no disponible".
 - Smoke de editores: **23/23** diálogos se construyen en modo offscreen.
@@ -93,12 +93,11 @@ Interfaz en **inglés** y **español** (492 claves por idioma) elegible en **Aju
 - Comprimir PDF verificado: notas.pdf 1 580 → 1 154 B; PDF de 30 páginas 27 956 → 27 408 B.
 - Revisión de calidad y estabilidad (1.4.1): corregidos todos los hallazgos bloqueantes e importantes — seguridad al crear RAR, fotos rotadas (EXIF) en recorte/censura, censura de vídeo verificada, fusión de PDFs sin sobrescritura, cancelación real con limpieza, guardado atómico de ajustes, instancia única, y mejoras de memoria y rendimiento. Detalles en `CHANGELOG.md`.
 
-## Novedades de esta versión (1.9.0)
+## Novedades de esta versión (1.9.1)
 
-La 1.8.0 ya había traído el render fiel de DOCX/XLSX/CSV/Markdown, la selección múltiple real de tipos mixtos y la rueda fija con `Ctrl+Shift+W`; esta versión pule la impresión y la extiende a más formatos.
+La 1.9.0 pulió la impresión de documentos (papel, márgenes, numeración y metadatos); esta versión se centra en cuándo debe aparecer la rueda.
 
-- **Impresión:** papel A4/Carta, márgenes normales (16/18 mm), compactos (10/12 mm) o amplios (25/20 mm) y numeración de páginas opcional en **Ajustes → Formatos → Documentos y PDF**; se aplican a todas las salidas PDF/JPG/PNG de documentos.
-- **PDF con oficio:** numeración «1 / 3» al pie y metadatos (Título, Autor, Creador, Productor) en cada PDF generado.
-- **Más formatos por el pipeline HTML:** TXT (antes Courier 54 pt), RTF, ODT y PPTX (una página por diapositiva) se componen como HTML/CSS.
-- **Tipografía de impresión:** títulos sin cortes, filas de tabla enteras, cabecera repetida, viudas/huérfanas controladas y `@media screen` para que el HTML exportado también se lea en pantalla.
-- **Verificación:** 165 pruebas y comprobación real con pypdfium2 (A4, márgenes de 16 mm, numeración y metadatos).
+- **Sin rueda en juegos ni en pantalla completa:** la rueda no se abre sobre videojuegos (clases de motores conocidos) ni sobre ventanas que cubren su monitor, ni con la sesión bloqueada o en modo presentación; el Explorador, el escritorio y las ventanas normales no se ven afectados.
+- **Ajuste opcional:** **Ajustes → General → Ocultar la rueda en juegos y aplicaciones a pantalla completa** (activado por defecto) desactiva la puerta si alguna aplicación concreta la necesita.
+- **Autoocultado:** si una aplicación a pantalla completa toma el primer plano con la rueda visible o fija, la rueda se oculta sola.
+- **Verificación:** 181 pruebas (180 verdes, 1 omitida por diseño) y comprobación empírica en Windows 11 (maximizadas y ventanas sin bordes).

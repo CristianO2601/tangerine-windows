@@ -15,7 +15,7 @@ from ctypes import wintypes
 
 from PySide6.QtCore import QObject, QPoint, QTimer, Signal
 
-from . import dragfiles, selection, settings
+from . import context, dragfiles, selection, settings
 
 user32 = ctypes.windll.user32
 
@@ -271,6 +271,13 @@ class DragMonitor(QObject):
                     self._visible = False
                     self.wheelHidden.emit()
                 return
+            if self._visible and not context.wheel_allowed():
+                self._sticky = False
+                self._set_active(False)
+                self._visible = False
+                self._mode = None
+                self.wheelHidden.emit()
+                return
             if new_press:
                 self.stickyClicked.emit(cursor)
             return
@@ -310,6 +317,11 @@ class DragMonitor(QObject):
             return
 
         if self._visible:
+            if not context.wheel_allowed():
+                self._visible = False
+                self._mode = None
+                self.wheelHidden.emit()
+                return
             self.wheelMoved.emit(cursor)
             mode = self._mode_for_current_modifiers()
             if mode is None and self._touch_mode:
@@ -335,6 +347,8 @@ class DragMonitor(QObject):
             return
         mode = self._mode_for_current_modifiers()
         if mode is None:
+            return
+        if not context.wheel_allowed():
             return
         files = self._hydrate_from_snapshot(self._drag_files())
         # The OLE drag payload is not readable on every Windows build while
@@ -455,6 +469,8 @@ class DragMonitor(QObject):
         if not bool(settings.get("touchLongPressEnabled")):
             return False
         if self._held_modifiers():
+            return False
+        if not context.wheel_allowed():
             return False
         if time.monotonic() < self._cooldown_until:
             return False

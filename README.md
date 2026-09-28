@@ -235,7 +235,7 @@ catalog routes to a real editor/job without falling back to a "not available"
 message box, and the settings file survives an atomic save/load round-trip and
 a corrupt-file recovery.
 
-The v1.9.0 verification run is fully green: **165 tests** (164 passing, one
+The v1.9.1 verification run is fully green: **181 tests** (180 passing, one
 intentionally skipped — the end-to-end render needs a display), a tool-routing
 audit of **43/43** identifiers without fallbacks, **23/23** editor smoke
 dialogs, **11/11** copy-regression checks, **50/50** end-to-end conversion/tool
@@ -245,6 +245,12 @@ cases and **38/38** document routes.
 
 - **Windows 11 only.** The drag detection uses Win32/OLE APIs and is not
   portable to macOS or Linux.
+- **Windowed games without a known engine class stay available.** The wheel is
+  suppressed over full-screen apps that cover the monitor, over known
+  game-engine window classes and while Windows reports a blocked notification
+  state; a game that keeps a normal window is treated like any other app.
+  Turn off "Hide the wheel in games and full-screen apps" in Settings →
+  General to disable the gate for everything.
 - **Installer without code signing.** `packaging/build.ps1` builds a per-user
   Inno Setup installer (`dist\Tangerine-<version>-Setup.exe`) next to the
   portable ZIP, but the binaries are not signed, so Windows SmartScreen may
@@ -334,6 +340,11 @@ metadatos GPS de imagen (ver, editar o quitar ubicación).
 Desde la v1.9.0 las conversiones de documentos se imprimen con papel A4/Carta,
 márgenes configurables (16/18 mm por defecto) y numeración de páginas, y TXT,
 RTF, ODT y PPTX se componen por el mismo pipeline HTML que Markdown o DOCX.
+
+Desde la v1.9.1 la rueda no se abre sobre juegos ni aplicaciones a pantalla
+completa, y se oculta sola si una de ellas toma el primer plano con la rueda
+visible o fija; el Explorador, el escritorio y las ventanas normales no se ven
+afectados, y la puerta se puede desactivar en **Ajustes → General**.
 
 Es una reimplementación independiente para Windows de la *idea* de conversión
 por arrastre de la app macOS Tangerine (de thmmhnsn), **sin afiliación** con

@@ -140,6 +140,12 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "and the editors between the light and dark palettes. System "
             "follows the Windows theme."
         ),
+        "settings.general.fullscreen": "Hide the wheel in games and full-screen apps",
+        "settings.general.fullscreen_hint": (
+            "The wheel never opens over full-screen games or apps; File "
+            "Explorer, the desktop and windowed apps keep working as usual. "
+            "Turn this off if an app you use never shows the wheel."
+        ),
         "settings.wheels.intro": (
             "Hold one of these combinations while dragging files in File Explorer "
             "to open a wheel at the pointer."
@@ -766,6 +772,15 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "La apariencia cambia el material de la rueda, la tarjeta de "
             "progreso y los editores entre las paletas clara y oscura. "
             "Sistema sigue el tema de Windows."
+        ),
+        "settings.general.fullscreen": (
+            "Ocultar la rueda en juegos y aplicaciones a pantalla completa"
+        ),
+        "settings.general.fullscreen_hint": (
+            "La rueda no se abre sobre juegos ni aplicaciones a pantalla "
+            "completa; el Explorador, el escritorio y las ventanas normales "
+            "siguen funcionando igual. Desactívalo si alguna aplicación no "
+            "muestra la rueda cuando la necesitas."
         ),
         "settings.wheels.intro": (
             "Mantén una de estas combinaciones al arrastrar archivos en el "

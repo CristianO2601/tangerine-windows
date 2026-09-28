@@ -26,8 +26,11 @@ class _ScriptedKeys:
 @pytest.fixture
 def rig(qapp, monkeypatch):
     keys = _ScriptedKeys()
-    state = {"pos": QPoint(100, 100)}
+    state = {"pos": QPoint(100, 100), "allowed": True}
     monkeypatch.setattr(monitor_module, "_is_down", keys)
+    monkeypatch.setattr(
+        monitor_module.context, "wheel_allowed", lambda: state["allowed"]
+    )
     monkeypatch.setattr(
         DragMonitor, "_mode_for_current_modifiers", lambda self: "conversion"
     )
@@ -99,3 +102,23 @@ def test_release_requires_consecutive_up_samples(rig):
 
     monitor._tick()
     assert [event[0] for event in events].count("hidden") == 1
+
+
+def test_context_gate_blocks_the_wheel(rig):
+    rig["state"]["allowed"] = False
+    rig["monitor"]._tick()
+    rig["state"]["pos"] = QPoint(100, 180)
+    rig["monitor"]._tick()
+    assert rig["events"] == []
+
+    rig["state"]["allowed"] = True
+    rig["monitor"]._tick()
+    assert [event[0] for event in rig["events"]] == ["shown"]
+
+
+def test_context_gate_hides_a_visible_wheel(rig):
+    _start_drag(rig)
+    rig["state"]["allowed"] = False
+    rig["state"]["pos"] = QPoint(100, 200)
+    rig["monitor"]._tick()
+    assert [event[0] for event in rig["events"]][-1] == "hidden"

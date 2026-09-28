@@ -52,8 +52,11 @@ def _wait_until(qapp, predicate, timeout: float = 2.0) -> bool:
 @pytest.fixture
 def rig(qapp, monkeypatch):
     keys = _ScriptedKeys()
-    state = {"pos": QPoint(100, 100), "files": None, "selection": []}
+    state = {"pos": QPoint(100, 100), "files": None, "selection": [], "allowed": True}
     monkeypatch.setattr(monitor_module, "_is_down", keys)
+    monkeypatch.setattr(
+        monitor_module.context, "wheel_allowed", lambda: state["allowed"]
+    )
     monkeypatch.setattr(
         DragMonitor, "_mode_for_current_modifiers", lambda self: "conversion"
     )
