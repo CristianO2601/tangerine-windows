@@ -235,7 +235,7 @@ catalog routes to a real editor/job without falling back to a "not available"
 message box, and the settings file survives an atomic save/load round-trip and
 a corrupt-file recovery.
 
-The v1.9.1 verification run is fully green: **181 tests** (180 passing, one
+The v1.9.1 verification run is fully green: **183 tests** (182 passing, one
 intentionally skipped — the end-to-end render needs a display), a tool-routing
 audit of **43/43** identifiers without fallbacks, **23/23** editor smoke
 dialogs, **11/11** copy-regression checks, **50/50** end-to-end conversion/tool

@@ -361,6 +361,8 @@ def main():
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(message)s",
     )
+    # comtypes logs an INFO line per generated module on every selection read.
+    logging.getLogger("comtypes").setLevel(logging.WARNING)
     _install_excepthooks()
     try:
         return _run()

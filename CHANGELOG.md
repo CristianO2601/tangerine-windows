@@ -27,10 +27,22 @@ nada que soltar encima de una ventana que cubre el escritorio.
 - La rueda se oculta sola si una aplicación a pantalla completa toma el primer
   plano mientras está visible o fija.
 
+### Rendimiento
+- **Arranque más ligero.** La detección de motores ya no importa la pila de
+  documentos, OCR y visión solo para comprobarla (medido: ~2,4 s de espera en
+  el hilo de la interfaz y ~90 MB de memoria residente): ahora se comprueba
+  que estén instalados sin cargarlos, y se importan cuando una conversión o
+  herramienta los usa de verdad.
+- El registro dejó de anotar las líneas informativas de comtypes en cada
+  lectura de la selección.
+
 ### Verificación
-- Suite completa: **181 pruebas** (180 verdes, 1 omitida por diseño: el render
-  real necesita pantalla), incluidas 14 pruebas nuevas de la puerta de contexto
-  y 2 de integración con el monitor.
+- Suite completa: **183 pruebas** (182 verdes, 1 omitida por diseño: el render
+  real necesita pantalla), incluidas 14 pruebas nuevas de la puerta de contexto,
+  2 de integración con el monitor y 2 de detección de motores sin importarlos.
+- Perfilado (sonda de memoria, offscreen): el calentamiento del catálogo pasa de
+  ~2,4 s y +93 MB a ~0,02 s y ~0 MB; la memoria tras el arranque baja de
+  ~148 MB a ~56 MB.
 - Comprobación empírica en Windows 11: una ventana maximizada no se bloquea
   (`QUNS=5`, `SW_SHOWMAXIMIZED`); una ventana sin bordes que cubre el monitor
   no reporta `QUNS` ocupado (5) y se detecta por geometría.

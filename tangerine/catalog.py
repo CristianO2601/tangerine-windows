@@ -1,5 +1,6 @@
 """Format families, conversion targets and file tools - mirrors the macOS spec."""
 
+import importlib.util
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -141,76 +142,44 @@ def is_archive(name: str) -> bool:
 _ENGINES: set[str] | None = None
 
 
+#: Capability name -> import name. The modules themselves are imported lazily
+#: where they are used (engines.py, documents.py, render.py, tools.py); this
+#: registry exists so availability can be reported without paying that cost.
+_ENGINE_MODULES = (
+    ("pillow", "PIL"),
+    ("heic", "pillow_heif"),
+    ("pdfium", "pypdfium2"),
+    ("pypdf", "pypdf"),
+    ("docx", "docx"),
+    ("xlsx", "openpyxl"),
+    ("pptx", "pptx"),
+    ("rtf", "striprtf"),
+    ("odt", "odf"),
+    ("markdown", "markdown"),
+    ("reportlab", "reportlab"),
+    ("qr", "cv2"),
+    ("ocr", "rapidocr_onnxruntime"),
+)
+
+
+def _installed(module: str) -> bool:
+    """True when *module* is importable, without importing it.
+
+    The catalog is warmed on the GUI thread right after startup. Importing
+    the document/OCR/vision stack just to probe it cost ~2.4 s and ~90 MB
+    of idle memory; ``find_spec`` answers the same question in microseconds.
+    """
+    try:
+        return importlib.util.find_spec(module) is not None
+    except Exception:
+        return False
+
+
 def available_engines() -> set[str]:
     global _ENGINES
     if _ENGINES is not None:
         return _ENGINES
-    engines = set()
-    try:
-        import PIL  # noqa: F401
-        engines.add("pillow")
-    except Exception:
-        pass
-    try:
-        import pillow_heif  # noqa: F401
-        engines.add("heic")
-    except Exception:
-        pass
-    try:
-        import pypdfium2  # noqa: F401
-        engines.add("pdfium")
-    except Exception:
-        pass
-    try:
-        import pypdf  # noqa: F401
-        engines.add("pypdf")
-    except Exception:
-        pass
-    try:
-        import docx  # noqa: F401
-        engines.add("docx")
-    except Exception:
-        pass
-    try:
-        import openpyxl  # noqa: F401
-        engines.add("xlsx")
-    except Exception:
-        pass
-    try:
-        import pptx  # noqa: F401
-        engines.add("pptx")
-    except Exception:
-        pass
-    try:
-        import striprtf  # noqa: F401
-        engines.add("rtf")
-    except Exception:
-        pass
-    try:
-        import odf  # noqa: F401
-        engines.add("odt")
-    except Exception:
-        pass
-    try:
-        import markdown  # noqa: F401
-        engines.add("markdown")
-    except Exception:
-        pass
-    try:
-        import reportlab  # noqa: F401
-        engines.add("reportlab")
-    except Exception:
-        pass
-    try:
-        import cv2  # noqa: F401
-        engines.add("qr")
-    except Exception:
-        pass
-    try:
-        import rapidocr_onnxruntime  # noqa: F401
-        engines.add("ocr")
-    except Exception:
-        pass
+    engines = {name for name, module in _ENGINE_MODULES if _installed(module)}
     if media.ffmpeg_path():
         engines.add("ffmpeg")
     if media.unrar_path():

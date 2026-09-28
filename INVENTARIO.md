@@ -1,6 +1,6 @@
 # Inventario de funciones — Tangerine para Windows
 
-Versión **1.9.1**. Estado verificado: auditoría de rutas **43/43 OK**, suite completa **181 pruebas (180 verdes, 1 omitida por diseño)**, smoke de editores **23/23**, regresión de arrastre **11/11**, extremo a extremo **50/50**, rutas de documentos **38/38**.
+Versión **1.9.1**. Estado verificado: auditoría de rutas **43/43 OK**, suite completa **183 pruebas (182 verdes, 1 omitida por diseño)**, smoke de editores **23/23**, regresión de arrastre **11/11**, extremo a extremo **50/50**, rutas de documentos **38/38**.
 
 ## Cómo funciona
 
@@ -83,7 +83,7 @@ Interfaz en **inglés** y **español** (492 claves por idioma) elegible en **Aju
 
 ## Verificación
 
-- Suite completa: **181 pruebas (180 verdes, 1 omitida por diseño)**, incluida paridad i18n en/es, formatos v1.7.0 (AVIF, audio, vídeo, subtítulos), pixelado, fondo completo, edición de foto, GPS, teclado de la rueda, memoria de lienzos, el pipeline de impresión v1.9.0 (papel, márgenes, numeración, metadatos y render HTML de TXT/RTF/ODT/PPTX) y la puerta de contexto v1.9.1 (juegos y pantalla completa).
+- Suite completa: **183 pruebas (182 verdes, 1 omitida por diseño)**, incluida paridad i18n en/es, formatos v1.7.0 (AVIF, audio, vídeo, subtítulos), pixelado, fondo completo, edición de foto, GPS, teclado de la rueda, memoria de lienzos, el pipeline de impresión v1.9.0 (papel, márgenes, numeración, metadatos y render HTML de TXT/RTF/ODT/PPTX) y la puerta de contexto v1.9.1 (juegos y pantalla completa).
 - Render real comprobado (pypdfium2): PDF A4 de 595 × 842 pt desde Markdown, tinta a 44 pt (16 mm) del borde, «2 / 2» al pie y metadatos «Tangerine 1.9.0».
 - Auditoría de rutas: las **43/43** herramientas abren su editor o ejecutan su proceso, sin mensajes de "no disponible".
 - Smoke de editores: **23/23** diálogos se construyen en modo offscreen.
@@ -100,4 +100,5 @@ La 1.9.0 pulió la impresión de documentos (papel, márgenes, numeración y met
 - **Sin rueda en juegos ni en pantalla completa:** la rueda no se abre sobre videojuegos (clases de motores conocidos) ni sobre ventanas que cubren su monitor, ni con la sesión bloqueada o en modo presentación; el Explorador, el escritorio y las ventanas normales no se ven afectados.
 - **Ajuste opcional:** **Ajustes → General → Ocultar la rueda en juegos y aplicaciones a pantalla completa** (activado por defecto) desactiva la puerta si alguna aplicación concreta la necesita.
 - **Autoocultado:** si una aplicación a pantalla completa toma el primer plano con la rueda visible o fija, la rueda se oculta sola.
-- **Verificación:** 181 pruebas (180 verdes, 1 omitida por diseño) y comprobación empírica en Windows 11 (maximizadas y ventanas sin bordes).
+- **Arranque más ligero:** la detección de motores ya no importa la pila de documentos, OCR y visión al iniciar (de ~2,4 s y ~90 MB a ~0,02 s y ~0 MB), y el registro ya no anota las líneas de comtypes.
+- **Verificación:** 183 pruebas (182 verdes, 1 omitida por diseño) y comprobación empírica en Windows 11 (maximizadas y ventanas sin bordes).

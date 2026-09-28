@@ -45,6 +45,27 @@ def _ids(tools) -> list[str]:
     return [tool.id for tool in tools]
 
 
+def test_available_engines_probes_without_importing(monkeypatch):
+    monkeypatch.setattr(catalog, "_ENGINES", None)
+    monkeypatch.setattr(catalog, "_installed", lambda module: module in {"PIL", "cv2", "docx"})
+
+    engines = catalog.available_engines()
+
+    assert {"pillow", "qr", "docx"} <= engines
+    assert "ocr" not in engines
+    assert "heic" not in engines
+
+
+def test_available_engines_ignores_broken_probes(monkeypatch):
+    monkeypatch.setattr(catalog, "_ENGINES", None)
+    monkeypatch.setattr(catalog, "_installed", lambda module: False)
+
+    engines = catalog.available_engines()
+
+    assert "pillow" not in engines
+    assert "ocr" not in engines
+
+
 def test_mixed_image_and_pdf_offers_the_union(monkeypatch):
     monkeypatch.setattr(catalog, "available_engines", lambda: ENGINES)
     conversions = catalog.conversions_for(_paths("photo.jpg", "paper.pdf"))
