@@ -106,9 +106,31 @@ def test_cli_manifest_unicode_cleanup_and_scope(tmp_path, monkeypatch):
     assert foreign.exists()
 
 
+class _TrackedRequestServer(requests.RequestServer):
+    """Expose accepted-socket destruction for the IPC test's teardown."""
+
+    def __init__(self):
+        self.accepted_sockets = []
+        self.destroyed_sockets = []
+        super().__init__()
+
+    def _read(self, socket):
+        if not any(socket is accepted for accepted in self.accepted_sockets):
+            index = len(self.accepted_sockets)
+            self.accepted_sockets.append(socket)
+            destroyed_sockets = self.destroyed_sockets
+            socket.destroyed.connect(
+                lambda *_args, i=index, seen=destroyed_sockets: seen.append(i)
+            )
+        super()._read(socket)
+
+
 def test_local_pipe_delivers_once_to_existing_instance(qapp, tmp_path, monkeypatch):
+    from PySide6.QtCore import QCoreApplication, QEvent
+    import shiboken6
+
     monkeypatch.setattr(paths, "data_dir", lambda: tmp_path)
-    server = requests.RequestServer()
+    server = _TrackedRequestServer()
     assert server.listen()
     received = []
     server.received.connect(received.append)
@@ -127,6 +149,16 @@ def test_local_pipe_delivers_once_to_existing_instance(qapp, tmp_path, monkeypat
             child.kill()
             child.wait()
         server.server.close()
+        accepted_sockets = list(server.accepted_sockets)
+        destroyed_sockets = server.destroyed_sockets
+        for socket in accepted_sockets:
+            if shiboken6.isValid(socket):
+                socket.abort()
+                socket.deleteLater()
+        server.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+        assert set(destroyed_sockets) == set(range(len(accepted_sockets)))
+        assert not shiboken6.isValid(server)
 
 
 @pytest.mark.parametrize("dark", [False, True])

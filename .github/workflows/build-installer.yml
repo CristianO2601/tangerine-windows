@@ -43,7 +43,7 @@ jobs:
           python -m pip install -r requirements-dev.txt
           python -m pytest -s -vv tests/test_pdf_flow.py --junitxml=build/pdf-flow-results.xml
           $pdfFlowExit = $LASTEXITCODE
-          python -m pytest -s -vv --junitxml=build/test-results.xml -k 'not test_local_pipe_delivers_once_to_existing_instance'
+          python -m pytest -s -vv --junitxml=build/test-results.xml
           if ($pdfFlowExit -ne 0 -or $LASTEXITCODE -ne 0) { throw 'Qt integration or regression validation failed' }
 
       - name: Read native crash diagnostics
