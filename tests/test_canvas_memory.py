@@ -128,8 +128,12 @@ def test_full_resolution_mapping(qapp, big_photo):
         assert bottom_right == pytest.approx((float(x + w), float(y + h)), abs=2.0)
 
         center = canvas.to_widget(BIG_SIZE[0] / 2, BIG_SIZE[1] / 2)
-        assert center.x() == pytest.approx(canvas.offset.x() + 280.0, abs=1.0)
-        assert center.y() == pytest.approx(canvas.offset.y() + 210.0, abs=1.0)
+        assert center.x() == pytest.approx(canvas.width() / 2, abs=1.0)
+        assert center.y() == pytest.approx(canvas.height() / 2, abs=1.0)
+        assert canvas.scale == pytest.approx(min(
+            (canvas.width() - 2 * canvas.HANDLE_PADDING) / canvas.pixmap.width(),
+            (canvas.height() - 2 * canvas.HANDLE_PADDING) / canvas.pixmap.height(),
+        ))
 
         assert canvas.clamp_box(7900.0, 5900.0, 1000.0, 1000.0) == (
             7900.0, 5900.0, 100.0, 100.0)
@@ -150,7 +154,10 @@ def test_crop_drag_moves_in_full_resolution_pixels(qapp, big_photo):
         assert canvas._mode == "move"
         canvas.mouseMoveEvent(_mouse_event(
             QEvent.Type.MouseMove, start + QPointF(14.0, 7.0)))
-        assert canvas.rect == pytest.approx([3200.0, 2100.0, 2000.0, 1000.0], abs=2.0)
+        dx = 14.0 / canvas.scale * canvas.display_scale
+        dy = 7.0 / canvas.scale * canvas.display_scale
+        assert canvas.rect == pytest.approx(
+            [3000.0 + dx, 2000.0 + dy, 2000.0, 1000.0], abs=2.0)
     finally:
         close_dialog(qapp, dialog)
 

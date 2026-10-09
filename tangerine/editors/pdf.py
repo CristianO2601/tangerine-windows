@@ -6,12 +6,13 @@ from pathlib import Path
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QCursor
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout, QHBoxLayout,
+    QAbstractItemView, QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout, QHBoxLayout,
     QLabel, QLineEdit, QListWidget, QListWidgetItem, QPushButton, QSpinBox,
 )
 
 from .. import engines, i18n, progress, settings
 from ..image_pdf import PdfOptions, is_pdf_image, ordered_paths
+from .ui.controls import NumericSpinBox, NumericDoubleSpinBox
 from .base import ToolDialog, align_form, chip_button
 
 _OPEN = set()
@@ -26,10 +27,10 @@ class ImagesPdfDialog(ToolDialog):
         self.resize(600, 610)
         self.setMinimumSize(520, 520)
         self.job_window = None
-        intro = QLabel(i18n.tr("pdf.images.intro", count=len(self._paths)))
-        intro.setWordWrap(True)
-        intro.setProperty("dim", True)
-        self._body.addWidget(intro)
+        self.intro = QLabel(i18n.tr("pdf.images.intro", count=len(self._paths)))
+        self.intro.setWordWrap(True)
+        self.intro.setProperty("dim", True)
+        self._body.addWidget(self.intro)
         self.order = QComboBox()
         for value in ("name", "received", "manual"):
             self.order.addItem(i18n.tr("pdf.order." + value), value)
@@ -44,6 +45,7 @@ class ImagesPdfDialog(ToolDialog):
         self._body.addWidget(hint)
 
         self.files = QListWidget()
+        self.files.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.files.setMinimumHeight(120)
         self._body.addWidget(self.files, 1)
         row = QHBoxLayout()
@@ -52,6 +54,12 @@ class ImagesPdfDialog(ToolDialog):
         row.addWidget(self.up)
         row.addWidget(self.down)
         row.addStretch()
+        add = chip_button(i18n.tr("pdf.add_images"))
+        remove = chip_button(i18n.tr("pdf.remove_images"))
+        add.clicked.connect(self.add_images)
+        remove.clicked.connect(self.remove_images)
+        row.addWidget(add)
+        row.addWidget(remove)
         self._body.addLayout(row)
         self.up.clicked.connect(lambda: self.move_item(-1))
         self.down.clicked.connect(lambda: self.move_item(1))
@@ -62,8 +70,8 @@ class ImagesPdfDialog(ToolDialog):
         form = QFormLayout()
         align_form(form)
         layout_row = QHBoxLayout()
-        self.rows = QSpinBox()
-        self.columns = QSpinBox()
+        self.rows = NumericSpinBox()
+        self.columns = NumericSpinBox()
         for spin in (self.rows, self.columns):
             spin.setRange(1, 20)
         layout_row.addWidget(QLabel(i18n.tr("pdf.rows")))
@@ -74,7 +82,7 @@ class ImagesPdfDialog(ToolDialog):
         form.addRow(i18n.tr("pdf.layout"), layout_row)
         self.filenames = QCheckBox(i18n.tr("pdf.filenames"))
         form.addRow("", self.filenames)
-        self.font_scale = QDoubleSpinBox()
+        self.font_scale = NumericDoubleSpinBox()
         self.font_scale.setRange(0.2, 4.0)
         self.font_scale.setSingleStep(0.2)
         self.font_scale.setValue(1.0)
@@ -121,22 +129,53 @@ class ImagesPdfDialog(ToolDialog):
         self.down.setEnabled(manual)
 
     def move_item(self, delta):
-        index = self.files.currentRow()
-        target = index + delta
-        if index < 0 or not 0 <= target < self.files.count():
+        if self.order.currentData() != "manual":
+            return
+        selected = {self.files.row(item) for item in self.files.selectedItems()}
+        if not selected:
+            return
+        if (delta < 0 and min(selected) == 0) or (delta > 0 and max(selected) == self.files.count() - 1):
             return
         paths = self.selected_paths()
-        paths[index], paths[target] = paths[target], paths[index]
+        for index in sorted(selected, reverse=delta > 0):
+            target = index + delta
+            paths[index], paths[target] = paths[target], paths[index]
         self._render(paths)
-        self.files.setCurrentRow(target)
+        for index in selected:
+            self.files.item(index + delta).setSelected(True)
+
+    def add_images(self):
+        selected, _ = QFileDialog.getOpenFileNames(self, i18n.tr("pdf.add_images"), "",
+            "Images (*.jpg *.jpeg *.jpe *.jfif *.png *.bmp *.dib *.gif *.tif *.tiff *.webp *.ico *.heic *.heif *.avif *.svg)")
+        visible = self.selected_paths()
+        for name in selected:
+            path = Path(name)
+            if path.is_file() and is_pdf_image(path) and path not in self._paths:
+                self._paths.append(path)
+                visible.append(path)
+        mode = self.order.currentData()
+        self._render(visible if mode == "manual" else ordered_paths(self._paths, mode))
+        self.intro.setText(i18n.tr("pdf.images.intro", count=len(self._paths)))
+
+    def remove_images(self):
+        removed = {Path(item.data(Qt.ItemDataRole.UserRole)) for item in self.files.selectedItems()}
+        visible = [path for path in self.selected_paths() if path not in removed]
+        self._paths = [path for path in self._paths if path not in removed]
+        self._render(visible)
+        self.intro.setText(i18n.tr("pdf.images.intro", count=len(self._paths)))
 
     def _browse(self):
+        suggested = self._paths[0].with_suffix(".pdf") if self._paths else Path.home() / "images.pdf"
         path, _ = QFileDialog.getSaveFileName(self, i18n.tr("pdf.output"),
-                    str(self._paths[0].with_suffix(".pdf")), "PDF (*.pdf)")
+                    str(suggested), "PDF (*.pdf)")
         if path:
             self.output.setText(path)
 
     def _accept_clicked(self):
+        if not self.files.count():
+            self.error.setText(i18n.tr("err.no_images"))
+            self.error.show()
+            return
         chosen = self.output.text().strip()
         output = Path(chosen).with_suffix(".pdf") if chosen else None
         if output is not None and output.exists():

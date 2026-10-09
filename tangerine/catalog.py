@@ -410,6 +410,20 @@ def tools_for(paths_: list[Path]) -> list[Tool]:
         tools: list[Tool] = []
         if counts.get(FAMILY_IMAGE):
             tools.append(Tool("img.compress", "Compress", FAMILY_IMAGE, batch=True))
+            image_paths = [p for p in paths_ if family_of(p) == FAMILY_IMAGE]
+            # SVG sources support crop/background, but the annotate/redact
+            # editors operate on raster canvases.
+            raster_images = [p for p in image_paths if p.suffix.lower() not in SVG_EXTS]
+            # Geometry is per-image: the user must draw a crop/annotation/
+            # redaction on each source independently. The dispatcher opens
+            # one editor at a time, while tool_paths keeps mixed selections
+            # scoped to their images.
+            tools.extend(
+                Tool(tool.id, tool.label, FAMILY_IMAGE, batch=True)
+                for tool in IMAGE_TOOLS
+                if tool.id in {"img.crop", "img.background"}
+                or (raster_images and tool.id in {"img.annotate", "img.redact"})
+            )
             tools.append(Tool("img.pdf", "Create PDF", FAMILY_IMAGE, batch=True))
             if counts[FAMILY_IMAGE] > 1:
                 tools.append(Tool("img.collage", "Create Collage", FAMILY_IMAGE, batch=True))
@@ -458,11 +472,19 @@ def tools_for(paths_: list[Path]) -> list[Tool]:
     return []
 
 
-BATCH_TOOL_IDS = {"img.compress", "img.pdf", "img.collage", "aud.compress", "vid.compress", "vid.join", "pdf.merge"}
+BATCH_TOOL_IDS = {
+    "img.compress", "img.crop", "img.annotate", "img.redact", "img.background",
+    "img.pdf", "img.collage", "aud.compress", "vid.compress", "vid.join",
+    "pdf.merge",
+}
 
 #: Families a batch tool applies to; used to filter mixed selections.
 _TOOL_FAMILIES = {
     "img.compress": {FAMILY_IMAGE},
+    "img.crop": {FAMILY_IMAGE},
+    "img.annotate": {FAMILY_IMAGE},
+    "img.redact": {FAMILY_IMAGE},
+    "img.background": {FAMILY_IMAGE},
     "img.pdf": {FAMILY_IMAGE, FAMILY_GIF},
     "img.collage": {FAMILY_IMAGE},
     "vid.compress": {FAMILY_VIDEO},
@@ -478,7 +500,10 @@ def tool_paths(key: str, paths_: list[Path]) -> list[Path]:
     families = _TOOL_FAMILIES.get(key)
     if families is None:
         return list(paths_)
-    return [p for p in paths_ if family_of(p) in families]
+    selected = [p for p in paths_ if family_of(p) in families]
+    if key in {"img.annotate", "img.redact"}:
+        selected = [p for p in selected if p.suffix.lower() not in SVG_EXTS]
+    return selected
 
 
 def conversion_paths(target_ext: str, paths_: list[Path]) -> list[Path]:

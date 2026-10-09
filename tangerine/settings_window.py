@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
 
 from . import settings
 from .media import ffmpeg_path, ffprobe_path, rar_path, unrar_path
-from . import i18n, paths, theme
+from . import i18n, paths, theme, tool_defaults
 
 _WINDOW = None
 
@@ -214,10 +214,50 @@ class SettingsWindow(QWidget):
 
         tabs.addTab(self._wheels_tab(), i18n.tr("settings.tab.wheels"))
         tabs.addTab(self._formats_tab(), i18n.tr("settings.tab.formats"))
+        tabs.addTab(self._defaults_tab(), i18n.tr("defaults.tab"))
         tabs.addTab(self._about_tab(), i18n.tr("settings.tab.about"))
         tabs.addTab(self._general_tab(), i18n.tr("settings.tab.general"))
 
     # ------------------------------------------------------------------
+
+    def _defaults_tab(self):
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        hint = QLabel(i18n.tr("defaults.settings_hint"))
+        hint.setWordWrap(True)
+        hint.setProperty("dim", True)
+        layout.addWidget(hint)
+        labels = {"img.compress": "defaults.image_compress", "vid.compress": "defaults.video_compress",
+                  "aud.compress": "defaults.audio_compress", "img.collage": "dlg.collage.title",
+                  "img.background": "dlg.background.title"}
+        self.default_option_checks = {}
+        for key in tool_defaults.SUPPORTED:
+            checkbox = QCheckBox(i18n.tr(labels[key]))
+            checkbox.setChecked(tool_defaults.is_enabled(key))
+            checkbox.setEnabled(tool_defaults.load_options(key) is not None)
+            checkbox.setToolTip(i18n.tr("defaults.settings_tooltip"))
+            checkbox.toggled.connect(lambda checked, k=key: tool_defaults.set_enabled(k, checked))
+            self.default_option_checks[key] = checkbox
+            layout.addWidget(checkbox)
+        show_all = QPushButton(i18n.tr("defaults.show_all"))
+        show_all.setCursor(Qt.CursorShape.PointingHandCursor)
+        show_all.clicked.connect(self._show_all_options)
+        layout.addWidget(show_all)
+        layout.addStretch(1)
+        return page
+
+    def _show_all_options(self):
+        for key, box in self.default_option_checks.items():
+            tool_defaults.set_enabled(key, False)
+            box.setChecked(False)
+
+    def showEvent(self, event):
+        for key, box in self.default_option_checks.items():
+            box.blockSignals(True)
+            box.setChecked(tool_defaults.is_enabled(key))
+            box.setEnabled(tool_defaults.load_options(key) is not None)
+            box.blockSignals(False)
+        super().showEvent(event)
 
     def _general_tab(self):
         page = QWidget()

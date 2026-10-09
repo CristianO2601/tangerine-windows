@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.10.1 — 2026-10-09
+
+- **Annotate:** vuelve a mostrar la imagen; el grosor ya no oculta el método
+  `QWidget.width()`. Herramientas, cursores y barra de color/grosor reorganizados.
+- **Recorte:** ocho tiradores visibles, incluidos los centros de los bordes,
+  cursores por dirección, margen de interacción y proporción conservada al
+  arrastrar o escribir dimensiones.
+- **Selección múltiple:** recorte, anotación y censura se editan por imagen;
+  fondo aplica los mismos ajustes a todas las imágenes seleccionadas.
+- **Opciones guardadas:** compresión de imagen/vídeo/audio, collage y fondo
+  permiten activar «Usar estos ajustes la próxima vez sin preguntar».
+  Desactivado inicialmente; se puede revertir en Ajustes → Opciones de herramientas.
+- **Controles numéricos:** botones accesibles de tamaño amplio, sin solapamiento
+  del texto, con estados de foco, límite y deshabilitado en ambas apariencias.
+- **Editor PDF:** selección con Ctrl/Shift, movimiento de grupos y botones para
+  añadir o quitar imágenes. Conserva todos los archivos al crear el PDF.
+- El instalador verifica estos editores y salidas reales con `--smoke-editors`,
+  además de las pruebas de WebEngine y PDF del ejecutable empaquetado.
+
 ## 1.10.0 — 2026-10-08
 
 ### Novedades

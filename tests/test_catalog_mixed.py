@@ -138,10 +138,14 @@ def test_conversion_paths_filters_by_reachable_target(monkeypatch):
     assert catalog.conversion_paths("mp4", paths) == []
 
 
-def test_single_family_batch_tools_unchanged(monkeypatch):
+def test_multi_image_selection_offers_image_batch_tools(monkeypatch):
     monkeypatch.setattr(catalog, "available_engines", lambda: ENGINES)
     assert _ids(catalog.tools_for(_paths("a.jpg", "b.jpg"))) == [
         "img.compress",
+        "img.annotate",
+        "img.background",
+        "img.crop",
+        "img.redact",
         "img.pdf",
         "img.collage",
         "qr.read",
@@ -151,13 +155,22 @@ def test_single_family_batch_tools_unchanged(monkeypatch):
 def test_mixed_tools_union_is_filtered_by_family(monkeypatch):
     monkeypatch.setattr(catalog, "available_engines", lambda: ENGINES)
     ids = _ids(catalog.tools_for(_paths("photo.jpg", "paper.pdf")))
-    assert ids == ["img.compress", "img.pdf", "qr.read"]
+    assert ids == [
+        "img.compress", "img.annotate", "img.background", "img.crop",
+        "img.redact", "img.pdf", "qr.read",
+    ]
 
     ids = _ids(catalog.tools_for(_paths("photo.jpg", "second.jpg", "paper.pdf")))
-    assert ids == ["img.compress", "img.pdf", "img.collage", "qr.read"]
+    assert ids == [
+        "img.compress", "img.annotate", "img.background", "img.crop",
+        "img.redact", "img.pdf", "img.collage", "qr.read",
+    ]
 
     ids = _ids(catalog.tools_for(_paths("a.pdf", "b.pdf", "photo.jpg")))
-    assert ids == ["img.compress", "img.pdf", "pdf.merge", "qr.read"]
+    assert ids == [
+        "img.compress", "img.annotate", "img.background", "img.crop",
+        "img.redact", "img.pdf", "pdf.merge", "qr.read",
+    ]
 
     ids = _ids(catalog.tools_for(_paths("one.mp4", "two.mp4")))
     assert ids == ["vid.compress", "vid.join"]

@@ -242,9 +242,16 @@ class Controller(QObject):
     def _track(self, window):
         if window is None:
             return
+        if hasattr(window, "job_windows"):
+            for job_window in window.job_windows:
+                self._track(job_window)
+            return
         if not hasattr(window, "job"):
             if hasattr(window, "job_window"):
+                self._track(window.job_window)
                 window.finished.connect(lambda *_: self._track(window.job_window))
+            return
+        if window in self._jobs or getattr(window, "_job_done", False):
             return
         self._jobs.append(window)
         window.job.finished.connect(lambda *_a, w=window: self._forget(w))

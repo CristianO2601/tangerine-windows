@@ -10,7 +10,7 @@ from pathlib import Path
 from PIL import ImageOps
 
 from PySide6.QtCore import QPointF, QSize, Qt, QTimer
-from PySide6.QtGui import QColor, QPainter, QPixmap
+from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
     QColorDialog,
@@ -41,6 +41,7 @@ from .base import (
     section_label,
 )
 from .ui.canvas import AnnotateCanvas, CropCanvas, RedactCanvas, _draw_op
+from .ui.controls import NumericSpinBox
 
 
 # ---------------------------------------------------------------------------
@@ -74,7 +75,7 @@ class CompressDialog(ToolDialog):
         form.addRow(i18n.tr("lbl.dimensions"), self.size)
 
         self.target_check = QCheckBox(i18n.tr("dlg.compress.target"))
-        self.target_kb = QSpinBox()
+        self.target_kb = NumericSpinBox()
         self.target_kb.setRange(1, 1024 * 1024)
         self.target_kb.setValue(500)
         self.target_kb.setSuffix(" KB")
@@ -100,6 +101,13 @@ class CompressDialog(ToolDialog):
             self.target_kb.setVisible(False)
             key = "defaultVideoCompressionStrength" if family == "video" else "defaultAudioCompressionStrength"
             self.strength.setCurrentIndex(1 if settings.get(key) == "strong" else 0)
+        options = self.configure_defaults({"image": "img", "video": "vid", "audio": "aud"}[family] + ".compress")
+        if options:
+            self.strength.setCurrentIndex(int(options["strength"] == "strong"))
+            if family == "image":
+                self.size.setCurrentIndex(["original", "2560", "1920", "1280"].index(options["size"]))
+                self.target_kb.setValue(options["target_kb"])
+                self.target_check.setChecked(options["target_enabled"])
         self.add_buttons(i18n.tr("dlg.compress.title"))
 
     def save_defaults(self) -> None:
@@ -124,14 +132,20 @@ class CompressDialog(ToolDialog):
             target = max(1024, self.target_kb.value() * 1024)
         self.save_defaults()
 
+        options = {"strength": strength}
         if self._family == "image":
-            run_batch(self._paths, lambda p, ctx, reserved: tools.compress_image(
+            options.update(size=["original", "2560", "1920", "1280"][self.size.currentIndex()],
+                           target_enabled=self.target_check.isChecked(), target_kb=self.target_kb.value())
+        self.remember_options(options)
+
+        if self._family == "image":
+            self.job_window = run_batch(self._paths, lambda p, ctx, reserved: tools.compress_image(
                 p, strength, max_edge, target, ctx, reserved), i18n.tr("action.compressing_generic"))
         elif self._family == "video":
-            run_batch(self._paths, lambda p, ctx, reserved: tools.compress_video(
+            self.job_window = run_batch(self._paths, lambda p, ctx, reserved: tools.compress_video(
                 p, strength, ctx, reserved), i18n.tr("action.compressing_generic"))
         else:
-            run_batch(self._paths, lambda p, ctx, reserved: tools.compress_audio(
+            self.job_window = run_batch(self._paths, lambda p, ctx, reserved: tools.compress_audio(
                 p, strength, ctx, reserved), i18n.tr("action.compressing_generic"))
         self.accept()
 
@@ -173,15 +187,15 @@ class CollageDialog(ToolDialog):
         self.fit.addItems([i18n.tr("opt.fill"), i18n.tr("opt.contain")])
         form.addRow(i18n.tr("lbl.image_fit"), self.fit)
 
-        self.spacing = QSpinBox()
+        self.spacing = NumericSpinBox()
         self.spacing.setRange(0, 96)
         form.addRow(i18n.tr("lbl.spacing"), self.spacing)
 
-        self.padding = QSpinBox()
+        self.padding = NumericSpinBox()
         self.padding.setRange(0, 160)
         form.addRow(i18n.tr("lbl.padding"), self.padding)
 
-        self.radius = QSpinBox()
+        self.radius = NumericSpinBox()
         self.radius.setRange(0, 64)
         form.addRow(i18n.tr("lbl.rounded_corners"), self.radius)
 
@@ -230,6 +244,7 @@ class CollageDialog(ToolDialog):
             "resolution": settings.get("collageResolution", "source"),
             "fit": settings.get("collageFit", "fill"),
         }
+        defaults.update(self.configure_defaults("img.collage") or {})
         layouts = ["grid", "horizontal", "vertical", "featured"]
         self.layout_combo.setCurrentIndex(
             layouts.index(defaults["layout"]) if defaults["layout"] in layouts else 0)
@@ -361,8 +376,9 @@ class CollageDialog(ToolDialog):
     def _accept_clicked(self) -> None:
         self.save_defaults()
         options = self._options()
+        self.remember_options(options)
         ordered = self._ordered_paths()
-        progress.run_job(i18n.tr("action.building_collage"), lambda ctx: [
+        self.job_window = progress.run_job(i18n.tr("action.building_collage"), lambda ctx: [
             tools.make_collage(ordered, options, ctx, set())
         ])
         self.accept()
@@ -386,10 +402,10 @@ class CropImageDialog(ToolDialog):
         row.addWidget(section_label(i18n.tr("lbl.aspect")))
         row.addWidget(self.aspect)
         row.addSpacing(12)
-        self.w_spin = QSpinBox()
+        self.w_spin = NumericSpinBox()
         self.w_spin.setRange(1, self.canvas.image_size[0])
         self.w_spin.setValue(self.canvas.image_size[0])
-        self.h_spin = QSpinBox()
+        self.h_spin = NumericSpinBox()
         self.h_spin.setRange(1, self.canvas.image_size[1])
         self.h_spin.setValue(self.canvas.image_size[1])
         row.addWidget(QLabel(i18n.tr("lbl.w")))
@@ -409,6 +425,7 @@ class CropImageDialog(ToolDialog):
         self.add_buttons(i18n.tr("dlg.crop.title"))
 
     def _select_all(self) -> None:
+        self.aspect.setCurrentIndex(0)
         self.canvas.rect = [0.0, 0.0, float(self.canvas.image_size[0]),
                             float(self.canvas.image_size[1])]
         self.w_spin.setValue(self.canvas.image_size[0])
@@ -427,13 +444,24 @@ class CropImageDialog(ToolDialog):
         x, y, _, _ = self.canvas.rect
         w = self.w_spin.value()
         h = self.h_spin.value()
+        ratio = self.canvas.aspect_ratio
+        if ratio:
+            if self.sender() is self.h_spin:
+                w = h * ratio
+            else:
+                h = w / ratio
+            factor = min(1.0, (self.canvas.image_size[0] - x) / w,
+                         (self.canvas.image_size[1] - y) / h)
+            w, h = w * factor, h * factor
         x, y, w, h = self.canvas.clamp_box(x, y, float(w), float(h))
         self.canvas.rect = [x, y, w, h]
+        self._rect_changed(self.canvas.rect)
         self.canvas.update()
 
     def _aspect_changed(self) -> None:
         ratios = {0: None, 1: 1.0, 2: 1.5, 3: 4 / 3, 4: 16 / 9, 5: 9 / 16}
         ratio = ratios[self.aspect.currentIndex()]
+        self.canvas.aspect_ratio = ratio
         if ratio is None:
             return
         img_w, img_h = self.canvas.image_size
@@ -451,12 +479,12 @@ class CropImageDialog(ToolDialog):
         x, y, w, h = self.canvas.rect
         box = (int(round(x)), int(round(y)),
                int(round(x + w)), int(round(y + h)))
-        if box[2] < 2 or box[3] < 2:
+        if box[2] - box[0] < 2 or box[3] - box[1] < 2:
             QMessageBox.warning(
                 self, i18n.tr("dlg.crop.title"),
                 i18n.tr("msg.crop.need_area"))
             return
-        progress.run_job(
+        self.job_window = progress.run_job(
             i18n.tr("action.cropping", name=self._path.name),
             lambda ctx: [tools.crop_image(self._path, box, ctx, set())],
         )
@@ -558,7 +586,7 @@ class RedactPhotoDialog(ToolDialog):
              mode, self._color.name())
             for b in self.canvas.boxes
         ]
-        progress.run_job(
+        self.job_window = progress.run_job(
             i18n.tr("action.redacting", name=self._path.name),
             lambda ctx: [tools.redact_photo(self._path, boxes, ctx, set())],
         )
@@ -572,7 +600,15 @@ class RedactPhotoDialog(ToolDialog):
 class BackgroundDialog(ToolDialog):
     def __init__(self, path, parent: QWidget | None = None):
         super().__init__(i18n.tr("dlg.background.title"), parent)
-        self._path = Path(path)
+        self._paths = [Path(p) for p in path] if isinstance(path, (list, tuple)) else [Path(path)]
+        if not self._paths:
+            raise tools.EngineError(i18n.tr("err.no_images"))
+        self._path = self._paths[0]
+        if len(self._paths) > 1:
+            heading = QLabel(i18n.tr("defaults.batch", count=len(self._paths)))
+            heading.setWordWrap(True)
+            heading.setProperty("dim", True)
+            self._body.addWidget(heading)
         self._thumb_dir = Path(tempfile.mkdtemp(prefix="tangerine_background_"))
         self.finished.connect(self._cleanup_thumbs)
         image = tools.load_image(self._path)
@@ -627,7 +663,7 @@ class BackgroundDialog(ToolDialog):
         self._sync_button(self.to_button, self._to_color)
         gradient_row.addWidget(self.from_button, 1)
         gradient_row.addWidget(self.to_button, 1)
-        self.angle = QSpinBox()
+        self.angle = NumericSpinBox()
         self.angle.setRange(0, 360)
         self.angle.setSuffix("°")
         gradient_row.addWidget(self.angle)
@@ -649,12 +685,12 @@ class BackgroundDialog(ToolDialog):
                               "3:2", "16:9", "9:16"])
         form.addRow(i18n.tr("lbl.aspect"), self.aspect)
 
-        self.margin = QSpinBox()
+        self.margin = NumericSpinBox()
         self.margin.setRange(0, 512)
         self.margin.setSuffix(" px")
         form.addRow(i18n.tr("lbl.margin"), self.margin)
 
-        self.radius = QSpinBox()
+        self.radius = NumericSpinBox()
         self.radius.setRange(0, 256)
         self.radius.setSuffix(" px")
         form.addRow(i18n.tr("lbl.rounded_corners"), self.radius)
@@ -680,6 +716,9 @@ class BackgroundDialog(ToolDialog):
             widget.currentIndexChanged.connect(self._queue_preview)
         for widget in (self.margin, self.radius, self.angle):
             widget.valueChanged.connect(self._queue_preview)
+        options = self.configure_defaults("img.background")
+        if options:
+            self._restore_options(options)
         self.add_buttons(i18n.tr("btn.save_background"))
         self._fill_changed()
         QTimer.singleShot(80, self._refresh_preview)
@@ -702,8 +741,11 @@ class BackgroundDialog(ToolDialog):
             pass
 
     def _sync_button(self, button: QPushButton, color: QColor) -> None:
-        button.setStyleSheet(
-            f"border-left: 16px solid {color.name()}; padding-left: 8px;")
+        swatch = QPixmap(16, 16)
+        swatch.fill(color)
+        button.setIcon(QIcon(swatch))
+        button.setCursor(Qt.CursorShape.PointingHandCursor)
+        button.setMinimumWidth(128)
         button.setText(color.name())
 
     def _pick_color(self) -> None:
@@ -769,6 +811,24 @@ class BackgroundDialog(ToolDialog):
             "fit": "contain",
         }
 
+    def _restore_options(self, options: dict) -> None:
+        fill = options["fill"]
+        self.fill_type.setCurrentIndex(["color", "gradient", "image"].index(fill["type"]))
+        if fill["type"] == "color":
+            self._color = QColor(fill["color"])
+            self._sync_button(self.color_button, self._color)
+        elif fill["type"] == "gradient":
+            self._from_color, self._to_color = QColor(fill["from"]), QColor(fill["to"])
+            self._sync_button(self.from_button, self._from_color)
+            self._sync_button(self.to_button, self._to_color)
+            self.angle.setValue(fill["angle"])
+        else:
+            self._image_path = Path(fill["path"])
+            self.image_label.setText(self._image_path.name)
+        self.aspect.setCurrentIndex(["original", "1:1", "4:3", "3:2", "16:9", "9:16"].index(options["aspect"]))
+        self.margin.setValue(options["margin"])
+        self.radius.setValue(options["radius"])
+
     def _refresh_preview(self) -> None:
         options = self._options(self._scale)
         if options["fill"]["type"] == "image" and not options["fill"]["path"]:
@@ -788,16 +848,15 @@ class BackgroundDialog(ToolDialog):
             self.preview.setText(i18n.tr("msg.preview_unavailable"))
 
     def _accept_clicked(self) -> None:
-        if self.fill_type.currentIndex() == 2 and self._image_path is None:
+        if self.fill_type.currentIndex() == 2 and (self._image_path is None or not self._image_path.is_file()):
             QMessageBox.warning(
                 self, i18n.tr("dlg.background.title"),
                 i18n.tr("msg.background.no_image"))
             return
         options = self._options()
-        progress.run_job(
-            i18n.tr("action.adding_background_to", name=self._path.name),
-            lambda ctx: [tools.add_background(self._path, options, ctx, set())],
-        )
+        self.remember_options(options)
+        self.job_window = run_batch(self._paths, lambda path, ctx, reserved:
+            tools.add_background(path, options, ctx, reserved))
         self.accept()
 
 
@@ -833,7 +892,7 @@ class EditPhotoDialog(ToolDialog):
             slider = QSlider(Qt.Orientation.Horizontal)
             slider.setRange(min_v, max_v)
             slider.setValue(value)
-            spin = QSpinBox()
+            spin = NumericSpinBox()
             spin.setRange(min_v, max_v)
             spin.setValue(value)
             slider.valueChanged.connect(spin.setValue)
@@ -906,7 +965,7 @@ class EditPhotoDialog(ToolDialog):
     def _accept_clicked(self) -> None:
         path = self._path
         options = self._options()
-        progress.run_job(
+        self.job_window = progress.run_job(
             i18n.tr("action.editing", name=path.name),
             lambda ctx: [tools.edit_image(path, options, ctx, set())],
         )
@@ -930,7 +989,8 @@ def render_annotations(path: Path, ops: list[dict]) -> Path:
         _draw_op(painter, op, 1.0, QPointF(0.0, 0.0))
     painter.end()
     out = tools._unique(path.parent, f"{path.stem} Annotated", ".png", set())
-    qimage.save(str(out), "PNG")
+    if not qimage.save(str(out), "PNG"):
+        raise tools.EngineError(i18n.tr("err.annotate_save"))
     return out
 
 
@@ -939,6 +999,7 @@ class AnnotateDialog(ToolDialog):
         super().__init__(i18n.tr("dlg.annotate.title"), parent)
         self._path = Path(path)
         self.canvas = AnnotateCanvas(self._path)
+        self.canvas.setCursor(Qt.CursorShape.CrossCursor)
         self.canvas.setFixedSize(620, 420)
         self._body.addWidget(self.canvas)
 
@@ -951,25 +1012,28 @@ class AnnotateDialog(ToolDialog):
                 ("highlight", i18n.tr("opt.highlight")),
                 ("callout", i18n.tr("opt.callout"))
         ):
-            button = QPushButton(label)
+            button = chip_button(label)
             button.setCheckable(True)
             button.clicked.connect(lambda _=False, k=key: self._select_tool(k))
             self.tool_buttons[key] = button
             row.addWidget(button)
         self.tool_buttons["arrow"].setChecked(True)
         row.addStretch(1)
-        color_button = QPushButton(i18n.tr("btn.color"))
+        self._body.addLayout(row)
+        style_row = QHBoxLayout()
+        color_button = chip_button(i18n.tr("btn.color"))
         color_button.clicked.connect(self._pick_color)
-        row.addWidget(color_button)
-        row.addWidget(QLabel(i18n.tr("lbl.size")))
+        style_row.addWidget(color_button)
+        style_row.addWidget(QLabel(i18n.tr("lbl.size")))
         self.width_slider = QSlider(Qt.Orientation.Horizontal)
         self.width_slider.setRange(1, 12)
         self.width_slider.setValue(3)
         self.width_slider.setFixedWidth(90)
         self.width_slider.valueChanged.connect(
-            lambda v: setattr(self.canvas, "width", v))
-        row.addWidget(self.width_slider)
-        self._body.addLayout(row)
+            lambda v: setattr(self.canvas, "stroke_width", v))
+        style_row.addWidget(self.width_slider)
+        style_row.addStretch(1)
+        self._body.addLayout(style_row)
 
         bottom = QHBoxLayout()
         undo = chip_button(i18n.tr("btn.undo"))
@@ -986,12 +1050,14 @@ class AnnotateDialog(ToolDialog):
 
     def _select_tool(self, key: str) -> None:
         self.canvas.tool = key
+        self.canvas.setCursor(Qt.CursorShape.IBeamCursor if key == "text" else Qt.CursorShape.CrossCursor)
         for name, button in self.tool_buttons.items():
             button.setChecked(name == key)
 
     def _sync_color(self) -> None:
-        self._color_button.setStyleSheet(
-            f"border-left: 16px solid {self.canvas.color}; padding-left: 8px;")
+        swatch = QPixmap(16, 16)
+        swatch.fill(QColor(self.canvas.color))
+        self._color_button.setIcon(QIcon(swatch))
 
     def _pick_color(self) -> None:
         chosen = QColorDialog.getColor(
@@ -1016,7 +1082,7 @@ class AnnotateDialog(ToolDialog):
             ctx.progress(1.0)
             return [out]
 
-        progress.run_job(i18n.tr("action.annotating", name=path.name), work)
+        self.job_window = progress.run_job(i18n.tr("action.annotating", name=path.name), work)
         self.accept()
 
 
@@ -1153,7 +1219,7 @@ class MetadataDialog(ToolDialog):
             return
         fields = self._fields()
         path = self._path
-        progress.run_job(
+        self.job_window = progress.run_job(
             i18n.tr("action.writing_metadata", name=path.name),
             lambda ctx: [tools.write_metadata_image(
                 path, fields, False, ctx, set(), location)],
@@ -1162,7 +1228,7 @@ class MetadataDialog(ToolDialog):
 
     def _remove_location(self) -> None:
         path = self._path
-        progress.run_job(
+        self.job_window = progress.run_job(
             i18n.tr("action.removing_location", name=path.name),
             lambda ctx: [tools.remove_location(path, ctx, set())],
         )
@@ -1170,7 +1236,7 @@ class MetadataDialog(ToolDialog):
 
     def _remove_all(self) -> None:
         path = self._path
-        progress.run_job(
+        self.job_window = progress.run_job(
             i18n.tr("action.removing_metadata", name=path.name),
             lambda ctx: [tools.strip_metadata(path, ctx, set())],
         )

@@ -338,6 +338,36 @@ def stylesheet(dark: bool) -> str:
     QDoubleSpinBox:focus, QComboBox:focus {{
         border-color: {ACCENT};
     }}
+    QSpinBox[numericControl="true"], QDoubleSpinBox[numericControl="true"] {{
+        min-height: 50px;
+        min-width: 92px;
+        padding: 4px 6px;
+    }}
+    QToolButton[numericStepButton="true"] {{
+        background: {p['card_alt']};
+        border: none;
+        padding: 0;
+        color: {p['text_dim']};
+    }}
+    QToolButton[numericStepButton="true"][stepDirection="up"] {{
+        border-top-right-radius: 6px;
+    }}
+    QToolButton[numericStepButton="true"][stepDirection="down"] {{
+        border-bottom-right-radius: 6px;
+        border-top: 1px solid {p['border']};
+    }}
+    QToolButton[numericStepButton="true"]:hover {{
+        background: {ACCENT_BRIGHT};
+        color: #3A2416;
+    }}
+    QToolButton[numericStepButton="true"]:pressed {{
+        background: {ACCENT_DARK};
+        color: #FFFFFF;
+    }}
+    QToolButton[numericStepButton="true"]:disabled {{
+        background: {p['field']};
+        color: {p['border']};
+    }}
     QComboBox::drop-down {{
         border: none;
         width: 20px;

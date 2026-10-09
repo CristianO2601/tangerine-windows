@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (
 
 from .. import i18n, progress, tools
 from ..media import CREATE_NO_WINDOW, ffmpeg_path
+from .ui.controls import NumericSpinBox, NumericDoubleSpinBox
 from .base import ToolDialog, align_form, chip_button, section_label
 from .ui.canvas import CropCanvas
 from .ui.video import BoxDrawDialog, VideoPane
@@ -81,11 +82,11 @@ class TrimVideoDialog(ToolDialog):
         form = QFormLayout()
         form.setSpacing(10)
         align_form(form)
-        self.start_spin = QDoubleSpinBox()
+        self.start_spin = NumericDoubleSpinBox()
         self.start_spin.setRange(0.0, max(self._duration, 0.01))
         self.start_spin.setDecimals(3)
         self.start_spin.setSuffix(" s")
-        self.end_spin = QDoubleSpinBox()
+        self.end_spin = NumericDoubleSpinBox()
         self.end_spin.setRange(0.0, max(self._duration, 0.01))
         self.end_spin.setDecimals(3)
         self.end_spin.setValue(self._duration)
@@ -151,7 +152,7 @@ class CropVideoDialog(ToolDialog):
 
         row = QHBoxLayout()
         row.addWidget(QLabel(i18n.tr("lbl.frame_at")))
-        self.time_spin = QDoubleSpinBox()
+        self.time_spin = NumericDoubleSpinBox()
         self.time_spin.setRange(0.0, max(self._duration, 0.01))
         self.time_spin.setDecimals(2)
         self.time_spin.setValue(min(self._duration / 2.0, 3.0))
@@ -408,7 +409,7 @@ class SplitVideoDialog(ToolDialog):
         form = QFormLayout()
         form.setSpacing(10)
         align_form(form)
-        self.parts = QSpinBox()
+        self.parts = NumericSpinBox()
         self.parts.setRange(2, 20)
         self.parts.setValue(2)
         form.addRow(i18n.tr("lbl.sections"), self.parts)

@@ -43,6 +43,8 @@ DEFAULTS: dict[str, Any] = {
     "pdfMarginPreset": "normal",
     "pdfPageNumbers": True,
     "imagePdfOrder": "name",
+    "toolSkipOptions": {},
+    "toolDefaultOptions": {},
     "suppressInFullscreen": True,
     "welcomeShown": False,
 }

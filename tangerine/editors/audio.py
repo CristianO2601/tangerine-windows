@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
 
 from .. import i18n, progress, tools
 from ..media import CREATE_NO_WINDOW, ffmpeg_path
+from .ui.controls import NumericSpinBox, NumericDoubleSpinBox
 from .base import ToolDialog, align_form, chip_button
 from .ui.waveform import BleepWaveform, PlayerMixin, TrimWaveform
 
@@ -176,11 +177,11 @@ class TrimAudioDialog(ToolDialog, PlayerMixin):
         form = QFormLayout()
         form.setSpacing(10)
         align_form(form)
-        self.start_spin = QDoubleSpinBox()
+        self.start_spin = NumericDoubleSpinBox()
         self.start_spin.setRange(0.0, max(self._duration, 0.01))
         self.start_spin.setDecimals(3)
         self.start_spin.setSuffix(" s")
-        self.end_spin = QDoubleSpinBox()
+        self.end_spin = NumericDoubleSpinBox()
         self.end_spin.setRange(0.0, max(self._duration, 0.01))
         self.end_spin.setDecimals(3)
         self.end_spin.setValue(self._duration)
@@ -293,11 +294,11 @@ class BleepDialog(ToolDialog, PlayerMixin):
         form = QFormLayout()
         form.setSpacing(10)
         align_form(form)
-        self.start_spin = QDoubleSpinBox()
+        self.start_spin = NumericDoubleSpinBox()
         self.start_spin.setRange(0.0, max(self._duration, 0.01))
         self.start_spin.setDecimals(3)
         self.start_spin.setSuffix(" s")
-        self.end_spin = QDoubleSpinBox()
+        self.end_spin = NumericDoubleSpinBox()
         self.end_spin.setRange(0.0, max(self._duration, 0.01))
         self.end_spin.setDecimals(3)
         self.end_spin.setSuffix(" s")

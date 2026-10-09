@@ -7,10 +7,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtWidgets import QMessageBox, QWidget
+from PySide6.QtWidgets import QDialog, QMessageBox, QWidget
 
 from .. import i18n, jobs, progress, settings, tools
 from ..engines import EngineError
+from .batch import exec_editor, run_sequential_dialogs
 from .audio import (
     BleepDialog,
     ChannelsDialog,
@@ -49,13 +50,31 @@ from .video import (
 # Dispatch
 # ---------------------------------------------------------------------------
 
-def open_editor(paths, key: str, parent: QWidget | None = None, label: str | None = None) -> None:
+def open_editor(paths, key: str, parent: QWidget | None = None, label: str | None = None):
     sources = [Path(p) for p in paths]
     if not sources:
         return
     if key in ("img.compress", "vid.compress", "aud.compress"):
         family = {"img": "image", "vid": "video", "aud": "audio"}[key.split(".")[0]]
         return run_compress(paths, family, parent, label)
+    sequential_image_editors = {
+        "img.crop": CropImageDialog,
+        "img.redact": RedactPhotoDialog,
+        "img.annotate": AnnotateDialog,
+    }
+    if key in sequential_image_editors and len(sources) > 1:
+        try:
+            return run_sequential_dialogs(
+                sources, sequential_image_editors[key], parent)
+        except EngineError as error:
+            QMessageBox.warning(parent, label or i18n.tr("app.name"), str(error))
+            return None
+    if key == "img.background" and len(sources) > 1:
+        try:
+            return exec_editor(BackgroundDialog(sources, parent))
+        except EngineError as error:
+            QMessageBox.warning(parent, label or i18n.tr("app.name"), str(error))
+            return None
     builders = {
         "img.metadata": lambda: MetadataDialog(sources[0], parent),
         "img.crop": lambda: CropImageDialog(sources[0], parent),
@@ -91,8 +110,8 @@ def open_editor(paths, key: str, parent: QWidget | None = None, label: str | Non
     except EngineError as error:
         QMessageBox.warning(parent, label or i18n.tr("app.name"), str(error))
         return
-    dialog.exec()
+    return exec_editor(dialog)
 
 
-def run_compress(paths, family: str, parent: QWidget | None = None, label: str | None = None) -> None:
-    CompressDialog(paths, family, parent).exec()
+def run_compress(paths, family: str, parent: QWidget | None = None, label: str | None = None) -> QDialog:
+    return exec_editor(CompressDialog(paths, family, parent))

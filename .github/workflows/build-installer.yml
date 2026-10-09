@@ -100,6 +100,15 @@ jobs:
           $process.Refresh()
           if ($process.ExitCode -ne 0) { throw "Image PDF runtime validation failed" }
 
+          $process = Start-Process -FilePath "dist\Tangerine\Tangerine.exe" `
+            -ArgumentList "--smoke-editors" -WindowStyle Hidden -PassThru
+          if (-not $process.WaitForExit(30000)) {
+            Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+            throw "Tangerine.exe --smoke-editors timed out"
+          }
+          $process.Refresh()
+          if ($process.ExitCode -ne 0) { throw "Image editor runtime validation failed" }
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -114,7 +123,7 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Path build/validation -Force | Out-Null
-          foreach ($name in @('Tangerine-image-pdf-smoke.json', 'Tangerine-webengine-smoke.log')) {
+          foreach ($name in @('Tangerine-image-pdf-smoke.json', 'Tangerine-webengine-smoke.log', 'Tangerine-editors-smoke.json')) {
             $source = Join-Path $env:TEMP $name
             if (Test-Path -LiteralPath $source) {
               Copy-Item -LiteralPath $source -Destination (Join-Path 'build/validation' $name) -Force
@@ -131,6 +140,7 @@ jobs:
             build/pdf-flow-results.xml
             build/validation/Tangerine-image-pdf-smoke.json
             build/validation/Tangerine-webengine-smoke.log
+            build/validation/Tangerine-editors-smoke.json
           if-no-files-found: warn
 
       - name: Derive release version

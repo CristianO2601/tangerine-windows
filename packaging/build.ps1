@@ -184,6 +184,21 @@ try {
         throw 'Frozen PDF validation receipt is incomplete or belongs to another version.'
     }
 
+    Write-Host "==> Exercising the frozen image editors and opt-in batch options"
+    $EditorSmoke = Start-Process -FilePath $BundleExe -ArgumentList "--smoke-editors" -WindowStyle Hidden -PassThru
+    if (-not $EditorSmoke.WaitForExit(30000)) {
+        Stop-Process -Id $EditorSmoke.Id -Force
+        throw "Frozen editor smoke test timed out."
+    }
+    $EditorSmoke.Refresh()
+    $EditorReceiptPath = Join-Path $env:TEMP "Tangerine-editors-smoke.json"
+    if (Test-Path -LiteralPath $EditorReceiptPath) { Get-Content -LiteralPath $EditorReceiptPath }
+    if ($EditorSmoke.ExitCode -ne 0) { throw "Frozen editor smoke test failed with exit code $($EditorSmoke.ExitCode)." }
+    $EditorReceipt = Get-Content -LiteralPath $EditorReceiptPath -Raw | ConvertFrom-Json
+    if (-not $EditorReceipt.ok -or $EditorReceipt.version -ne $Version) {
+        throw 'Frozen editor validation receipt is incomplete or belongs to another version.'
+    }
+
     Write-Host "==> [3/4] Creating portable archive"
     $PortableZip = Join-Path $DistDir "Tangerine-$Version-windows-portable.zip"
     if (Test-Path -LiteralPath $PortableZip) { Remove-Item -LiteralPath $PortableZip -Force }

@@ -18,16 +18,18 @@ from pathlib import Path
 from PySide6.QtCore import QRectF, Qt
 from PySide6.QtGui import QColor, QFont, QImage, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
+    QCheckBox,
     QDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
+    QComboBox,
     QPushButton,
     QVBoxLayout,
     QWidget,
 )
 
-from .. import i18n, jobs, progress, theme
+from .. import i18n, jobs, progress, theme, tool_defaults
 
 
 # ---------------------------------------------------------------------------
@@ -49,7 +51,7 @@ def pil_to_pixmap(img, max_w: int, max_h: int) -> QPixmap:
     return QPixmap.fromImage(pil_to_qimage(preview))
 
 
-def run_batch(paths, run_one, title=None) -> None:
+def run_batch(paths, run_one, title=None):
     paths = [Path(p) for p in paths]
 
     def work(ctx):
@@ -70,7 +72,7 @@ def run_batch(paths, run_one, title=None) -> None:
             i18n.tr("action.working_on", name=paths[0].name) if len(paths) == 1
             else i18n.tr("action.working_on_many", n=len(paths))
         )
-    progress.run_job(title, work)
+    return progress.run_job(title, work)
 
 
 # ---------------------------------------------------------------------------
@@ -381,6 +383,10 @@ class ToolDialog(QDialog):
         self.update()
 
     def showEvent(self, event) -> None:  # noqa: N802
+        for button in self.findChildren(QPushButton):
+            button.setCursor(Qt.CursorShape.PointingHandCursor)
+        for combo in self.findChildren(QComboBox):
+            combo.setCursor(Qt.CursorShape.PointingHandCursor)
         self._capture_backdrop(force=True)
         super().showEvent(event)
 
@@ -430,6 +436,12 @@ class ToolDialog(QDialog):
 
     # -- buttons -----------------------------------------------------------
     def add_buttons(self, ok_text: str) -> QPushButton:
+        key = getattr(self, "_defaults_key", None)
+        if key:
+            self.reuse_options = QCheckBox(i18n.tr("defaults.reuse"))
+            self.reuse_options.setChecked(tool_defaults.is_enabled(key))
+            self.reuse_options.setToolTip(i18n.tr("defaults.hint"))
+            self._body.addWidget(self.reuse_options)
         footer = QHBoxLayout()
         footer.setSpacing(9)
         footer.addStretch(1)
@@ -454,3 +466,17 @@ class ToolDialog(QDialog):
 
     def save_defaults(self) -> None:
         pass
+
+    def configure_defaults(self, key: str) -> dict | None:
+        self._defaults_key = key
+        return tool_defaults.load_options(key)
+
+    def remember_options(self, options: dict) -> None:
+        tool_defaults.remember(self._defaults_key, options, self.reuse_options.isChecked())
+
+    def exec_with_defaults(self):
+        key = getattr(self, "_defaults_key", None)
+        if key and tool_defaults.can_reuse(key):
+            self._accept_clicked()
+            return self.result()
+        return self.exec()

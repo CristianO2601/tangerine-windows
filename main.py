@@ -112,6 +112,10 @@ if "--smoke-image-pdf" in sys.argv:
     from tangerine.smoke import image_pdf_smoke
     raise SystemExit(image_pdf_smoke())
 
+if "--smoke-editors" in sys.argv:
+    from tangerine.editor_smoke import editors_smoke
+    raise SystemExit(editors_smoke())
+
 if "--register-shell" in sys.argv or "--unregister-shell" in sys.argv:
     try:
         from tangerine.shell_integration import register_shell, unregister_shell

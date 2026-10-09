@@ -58,6 +58,23 @@ wash alone.
 
 ## Features
 
+### Editing multiple images and saved options
+
+The tools wheel offers Crop, Annotate, Redact and Add Background for multiple
+images. Positional edits open one editor per image; cancel stops the remaining
+editors. Background applies one set of options across the selected images.
+The PDF editor supports Ctrl/Shift selection, moving groups, and adding/removing
+images before creating the PDF.
+
+Compression (images, video, audio), Collage and Add Background offer **Use these
+options next time without asking**. This is **off initially**. Enable it when
+applying the options; turn it off in **Settings → Tool options** to edit them
+again. Invalid or missing saved options open the dialog. Crop, Annotate and
+Redact always collect positions for each source image.
+
+See the [1.10.1 repair audit](docs/editor-repair-1.10.1.md) for causes, components,
+and the runtime validation used before packaging.
+
 ### Image PDF workflow
 
 Create a PDF from one or several images through Tangerine's tray, tools wheel,
