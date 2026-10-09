@@ -199,6 +199,70 @@ La comparación A/B detectó además un `WinError 5` real en `os.replace` durant
 la publicación simultánea de dos PDF. Ese fallo se trata por separado en el
 motor, conservando la reserva exclusiva y la publicación atómica.
 
+La versión publicada usa el commit `2418d32ea570cabacf8f8b5965ebd1d71c51a6db`.
+El [CI de ese código](https://github.com/CristianO2601/tangerine-windows/actions/runs/37885910123)
+pasó 205 pruebas con 14 omitidas. El
+[workflow de publicación](https://github.com/CristianO2601/tangerine-windows/actions/runs/37885942064)
+terminó en verde: 14 casos de flujo PDF en una sesión fresca, suite completa
+con OCR (210 aprobadas, 13 omitidas), contrato nativo CTest y comprobaciones
+WebEngine/PDF del ejecutable congelado. Publicó
+[Tangerine 1.10.0](https://github.com/CristianO2601/tangerine-windows/releases/tag/v1.10.0).
+
+Se descargaron los dos activos publicados y se contrastaron sus SHA-256 con los
+digests de GitHub; la comprobación CRC de todas las entradas del ZIP pasó.
+`release-payload-receipt.json` conserva tamaños, hashes y commit de origen.
+
+El artefacto de validación de ese run contenía los dos XML de pruebas, pero no
+los logs de runtime: el proceso escribe en `%TEMP%` y el uploader buscaba en
+`runner.temp`. El log completo del job sí conserva los resultados del runtime.
+El workflow de la rama principal ahora copia esos dos archivos concretos desde
+`$env:TEMP` a `build/validation` antes de subirlos; la misma secuencia PowerShell
+se ejecutó localmente y produjo ambos archivos. Este ajuste de recolección no
+modifica los binarios publicados.
+
+### Instalación del artefacto publicado
+
+Se instaló el instalador descargado de la release, con código 0 y registro del
+Shell con código 0, sin reinicio. La lectura posterior confirmó EXE y DLL
+idénticos al ZIP publicado, versión 1.10.0, accesos de bandeja/inicio/Enviar a,
+ajustes preservados y migración propia con respaldo. El proceso activo quedó
+en `%LOCALAPPDATA%/Programs/Tangerine/Tangerine.exe`; solo hay una instancia.
+
+Desde esa instalación pasaron otra vez `--smoke-webengine` con sandbox activo
+y `--smoke-image-pdf` (2 peticiones IPC, PDF de 1/3 páginas, editor y autocierre).
+El probe real del Shell se compiló además para fixtures PNG y JPG válidos:
+consultó selecciones simples, múltiples y mixtas. Luego invocó los cuatro casos
+PNG/JPG simples/múltiples contra la instalación publicada. Todos devolvieron
+HRESULT 0 y generaron PDF de 1, 2, 1 y 2 páginas, leídos con `pypdf`.
+
+Los recibos finales son `install-published-exit.json`,
+`installation-receipt.json`, `installed-published-webengine-smoke.log`,
+`installed-published-image-pdf-smoke.json` y `published-shell-final-receipt.json`.
+La presentación visual del menú en Explorer sigue sin observarse; la consulta
+y la invocación se hicieron mediante las APIs del Shell, sin Computer Use.
+
+| Archivo publicado o instalado | SHA-256 |
+| --- | --- |
+| Instalador | `34aca84fb69b366b48310614de40ab601e4d7af2bcc9a47b2b53fb21331cacbf` |
+| ZIP portable | `4f23e8210240f7229af2e56c44d543e3555b4dab3acd39f0bea2dc4f3464aedb` |
+| `Tangerine.exe` | `0195303d88071773299e4f506ce96df570ee68d8ee09956b32c1f9b50f7d72d1` |
+| `TangerineShell.dll` | `096c873a095b19d243d9408f292ad600ecdf51c1204ab6969939da3006612168` |
+
+### Bloqueo real de publicación en Windows
+
+Además de las simulaciones unitarias, se abrió el placeholder mediante
+`CreateFileW` con lectura y uso compartido READ/WRITE, omitiendo SHARE_DELETE.
+El `os.replace` directo devolvió WinError 5 y conservó ambos archivos intactos.
+El helper de producción del commit `2418d32` registró tres errores WinError 5;
+tras liberar el handle a 0,252 s, publicó en el cuarto intento a 0,353 s.
+El PDF resultante tiene una página y el mismo SHA-256 que el temporal original.
+
+El recibo y el script ejecutado están en
+`scratch/evidence/real_publish_lock_evidence.json` y
+`scratch/evidence/real_publish_lock_probe.py`, dentro de la carpeta de evidencia.
+Esto comprueba recuperación ante ese bloqueo controlado real. No identifica
+qué proceso o condición causó el WinError 5 inicial del runner.
+
 ### Diagnóstico del build local
 
 El primer paquete ejecutó correctamente imágenes a PDF, pero WebEngine terminó

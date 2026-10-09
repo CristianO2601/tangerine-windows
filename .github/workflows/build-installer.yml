@@ -109,6 +109,18 @@ jobs:
             dist/*-Setup.exe
           if-no-files-found: error
 
+      - name: Collect runtime diagnostics
+        if: always()
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path build/validation -Force | Out-Null
+          foreach ($name in @('Tangerine-image-pdf-smoke.json', 'Tangerine-webengine-smoke.log')) {
+            $source = Join-Path $env:TEMP $name
+            if (Test-Path -LiteralPath $source) {
+              Copy-Item -LiteralPath $source -Destination (Join-Path 'build/validation' $name) -Force
+            }
+          }
+
       - name: Upload validation receipts
         if: always()
         uses: actions/upload-artifact@v4
@@ -117,8 +129,8 @@ jobs:
           path: |
             build/test-results.xml
             build/pdf-flow-results.xml
-            ${{ runner.temp }}/Tangerine-image-pdf-smoke.json
-            ${{ runner.temp }}/Tangerine-webengine-smoke.log
+            build/validation/Tangerine-image-pdf-smoke.json
+            build/validation/Tangerine-webengine-smoke.log
           if-no-files-found: warn
 
       - name: Derive release version
