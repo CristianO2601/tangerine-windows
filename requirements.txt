@@ -4,7 +4,8 @@
 #     pip install -r requirements.txt
 
 # UI: Qt Widgets, QtMultimedia, QtSvg
-PySide6>=6.11.0
+# Qt 6.11.2 passes the current Windows offscreen and frozen WebEngine checks.
+PySide6==6.11.2
 # Image processing
 Pillow>=12.0
 pillow-heif
