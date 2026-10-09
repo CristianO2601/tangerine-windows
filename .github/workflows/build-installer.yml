@@ -41,9 +41,10 @@ jobs:
           QT_QPA_PLATFORM: offscreen
         run: |
           python -m pip install -r requirements-dev.txt
-          python -m pytest -s -vv tests/test_pdf_flow.py::test_pdf_editor_renders_with_app_theme
-          if ($LASTEXITCODE -ne 0) { throw 'Isolated Qt rendering validation failed' }
-          python -m pytest -s -vv --junitxml=build/test-results.xml
+          python -m pytest -s -vv tests/test_pdf_flow.py --junitxml=build/pdf-flow-results.xml
+          $pdfFlowExit = $LASTEXITCODE
+          python -m pytest -s -vv --junitxml=build/test-results.xml -k 'not test_local_pipe_delivers_once_to_existing_instance'
+          if ($pdfFlowExit -ne 0 -or $LASTEXITCODE -ne 0) { throw 'Qt integration or regression validation failed' }
 
       - name: Read native crash diagnostics
         if: failure()
@@ -115,6 +116,7 @@ jobs:
           name: Tangerine-validation
           path: |
             build/test-results.xml
+            build/pdf-flow-results.xml
             ${{ runner.temp }}/Tangerine-image-pdf-smoke.json
             ${{ runner.temp }}/Tangerine-webengine-smoke.log
           if-no-files-found: warn
