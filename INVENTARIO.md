@@ -1,6 +1,6 @@
 # Inventario de funciones — Tangerine para Windows
 
-Versión **1.9.1**. Estado verificado: auditoría de rutas **43/43 OK**, suite completa **183 pruebas (182 verdes, 1 omitida por diseño)**, smoke de editores **23/23**, regresión de arrastre **11/11**, extremo a extremo **50/50**, rutas de documentos **38/38**.
+Versión **1.10.0**. Añade el flujo integrado de imágenes a PDF (orden natural/recibido/manual, cuadrícula, etiquetas, acceso por bandeja/rueda/Explorer y comunicación con la instancia abierta) e incluye la corrección de Qt WebEngine. Las métricas históricas descritas abajo corresponden a **1.9.1**; la verificación nueva se documenta en `docs/image-pdf-integration.md`.
 
 ## Cómo funciona
 

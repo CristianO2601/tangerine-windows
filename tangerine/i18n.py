@@ -1343,6 +1343,58 @@ def resolve_language(code: str | None = None) -> str:
     return code if code in TRANSLATIONS else DEFAULT_LANGUAGE
 
 
+TRANSLATIONS["en"].update({
+    "err.output_exists": "The output file already exists: {name}",
+    "err.pdf_image_unsupported": "This file type is not supported for image-to-PDF conversion.",
+    "pdf.images.title": "Create PDF from images...",
+    "pdf.images.intro": "{count} images · one PDF. Choose the page order and layout.",
+    "pdf.images.invalid": "Select only existing image files to create a PDF.",
+    "pdf.order.name": "Filename (natural A-Z)",
+    "pdf.order.received": "Order received from Explorer",
+    "pdf.order.manual": "Manual order",
+    "pdf.order.hint": "Explorer does not guarantee Ctrl-click chronology. Use Manual for an exact sequence.",
+    "pdf.move.up": "Move up", "pdf.move.down": "Move down",
+    "pdf.layout": "Images per page", "pdf.rows": "Rows", "pdf.columns": "Columns",
+    "pdf.filenames": "Add filenames", "pdf.font_scale": "Label size",
+    "pdf.output": "Save PDF", "pdf.output.browse": "Browse...",
+    "pdf.output.auto": "New file beside the images (automatic name)",
+    "pdf.output.hint": "Existing files are preserved. Choose a new filename.",
+    "pdf.output.exists": "This file already exists. Choose a new name; your existing file will be preserved.",
+    "pdf.create": "Create PDF",
+    "pdf.instance.old": "The running Tangerine version cannot receive this request. Quit it from the tray, then start the new version.",
+    "shell.title": "File Explorer",
+    "shell.hint": "Right-click images → Send to → Tangerine – Create PDF. The classic Tangerine PDF submenu is also registered.",
+    "shell.repair": "Install / repair Explorer integration",
+    "shell.source": "Explorer integration is available in the packaged Windows app.",
+    "shell.ready": "Explorer shortcuts and the Tangerine PDF menu are registered.",
+})
+TRANSLATIONS["es"].update({
+    "err.output_exists": "El archivo de salida ya existe: {name}",
+    "err.pdf_image_unsupported": "Este tipo de archivo no se admite para convertir a PDF.",
+    "pdf.images.title": "Crear PDF con imágenes...",
+    "pdf.images.intro": "{count} imágenes · un PDF. Elige el orden y la distribución de las páginas.",
+    "pdf.images.invalid": "Selecciona únicamente archivos de imagen existentes para crear un PDF.",
+    "pdf.order.name": "Nombre de archivo (A-Z natural)",
+    "pdf.order.received": "Orden recibido de Explorer",
+    "pdf.order.manual": "Orden manual",
+    "pdf.order.hint": "Explorer no garantiza la cronología de Ctrl+clic. Usa Manual para fijar una secuencia exacta.",
+    "pdf.move.up": "Subir", "pdf.move.down": "Bajar",
+    "pdf.layout": "Imágenes por página", "pdf.rows": "Filas", "pdf.columns": "Columnas",
+    "pdf.filenames": "Añadir nombres de archivo", "pdf.font_scale": "Tamaño del texto",
+    "pdf.output": "Guardar PDF", "pdf.output.browse": "Examinar...",
+    "pdf.output.auto": "Archivo nuevo junto a las imágenes (nombre automático)",
+    "pdf.output.hint": "Se conservan los archivos existentes. Elige un nombre nuevo.",
+    "pdf.output.exists": "Este archivo ya existe. Elige otro nombre; se conservará el archivo existente.",
+    "pdf.create": "Crear PDF",
+    "pdf.instance.old": "La versión abierta de Tangerine no puede recibir esta solicitud. Ciérrala desde la bandeja y abre la versión nueva.",
+    "shell.title": "Explorador de archivos",
+    "shell.hint": "Clic derecho en imágenes → Enviar a → Tangerine – Crear PDF. También se registra el submenú clásico Tangerine PDF.",
+    "shell.repair": "Instalar / reparar integración con Explorer",
+    "shell.source": "La integración con Explorer está disponible en la aplicación empaquetada de Windows.",
+    "shell.ready": "Se registraron los accesos de Explorer y el menú PDF de Tangerine.",
+})
+
+
 def current_language() -> str:
     """The effective language code currently used for lookups."""
     return resolve_language()

@@ -425,7 +425,7 @@ def stylesheet(dark: bool) -> str:
     QMenu::separator {{
         height: 1px; background: {p['border']}; margin: 4px 8px;
     }}
-    QLabel[muted="true"] {{ color: {p['text_dim']}; }}
+    QLabel[muted="true"], QLabel[dim="true"], QLabel#dim {{ color: {p['text_dim']}; }}
     QToolTip {{
         background: {p['card']};
         color: {p['text']};

@@ -19,6 +19,7 @@ from typing import Callable
 from PIL import Image, ImageOps
 
 from . import i18n, naming, render
+from .image_pdf import PdfOptions, create_image_pdf
 from .catalog import (
     AUDIO_EXTS, FAMILY_ARCHIVE, FAMILY_AUDIO, FAMILY_DOC, FAMILY_GIF,
     FAMILY_IMAGE, FAMILY_PDF, FAMILY_SUB, FAMILY_TXT, FAMILY_VIDEO, GIF_EXTS,
@@ -196,42 +197,14 @@ def convert_image(path: Path, target: str, ctx: Ctx, reserved: set[Path]) -> Pat
     return out_path
 
 
-def images_to_pdf(paths: list[Path], ctx: Ctx, reserved: set[Path]) -> Path:
-    first = paths[0]
-    folder = first.parent
-    name = naming.folder_name(first, "PDF") if len(paths) > 1 else first.stem
-    out_path = _unique(folder, name, ".pdf", reserved)
-    pages: list[Image.Image] = []
-    try:
-        for path in paths:
-            verify_writable(path)
-            try:
-                img = Image.open(path)
-            except Exception as exc:
-                raise EngineError(
-                    i18n.tr("err.read_image", name=path.name, detail=exc)) from exc
-            if img.getexif().get(274, 1) != 1:
-                img = ImageOps.exif_transpose(img)
-            if img.mode in ("RGBA", "LA", "P"):
-                img = _flatten(img)
-            elif img.mode != "RGB":
-                img = img.convert("RGB")
-            pages.append(img)
-        total = len(pages)
-        if total == 0:
-            raise EngineError(i18n.tr("err.no_images"))
-        pages[0].save(
-            out_path, "PDF", resolution=150.0,
-            save_all=True, append_images=pages[1:],
-        )
-    finally:
-        for page in pages:
-            try:
-                page.close()
-            except Exception:
-                pass
-    ctx.progress(1.0)
-    return out_path
+def images_to_pdf(
+    paths: list[Path],
+    ctx: Ctx,
+    reserved: set[Path],
+    options: PdfOptions | None = None,
+) -> Path:
+    """Compatibility wrapper for the configurable image-to-PDF engine."""
+    return create_image_pdf(paths, ctx, reserved, options)
 
 
 def image_to_docx(path: Path, ctx: Ctx, reserved: set[Path]) -> Path:

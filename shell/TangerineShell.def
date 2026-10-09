@@ -1,0 +1,4 @@
+LIBRARY TangerineShell
+EXPORTS
+    DllGetClassObject PRIVATE
+    DllCanUnloadNow PRIVATE

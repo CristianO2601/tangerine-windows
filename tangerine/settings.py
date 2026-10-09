@@ -42,6 +42,7 @@ DEFAULTS: dict[str, Any] = {
     "pdfPageSize": "a4",
     "pdfMarginPreset": "normal",
     "pdfPageNumbers": True,
+    "imagePdfOrder": "name",
     "suppressInFullscreen": True,
     "welcomeShown": False,
 }

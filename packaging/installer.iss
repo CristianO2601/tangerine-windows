@@ -17,6 +17,13 @@
   #define APPVER "0.0.0"
 #endif
 
+#ifndef BUNDLEDIR
+  #define BUNDLEDIR "..\dist\Tangerine"
+#endif
+#ifndef OUTPUTDIR
+  #define OUTPUTDIR "..\dist"
+#endif
+
 #define AppName "Tangerine for Windows"
 #define AppPublisher "Tangerine for Windows contributors"
 #define AppExeName "Tangerine.exe"
@@ -33,7 +40,7 @@ DefaultGroupName=Tangerine
 DisableProgramGroupPage=yes
 ; "lowest" = per-user install, no UAC prompt, no admin rights required.
 PrivilegesRequired=lowest
-OutputDir=..\dist
+OutputDir={#OUTPUTDIR}
 OutputBaseFilename=Tangerine-{#APPVER}-Setup
 Compression=lzma2
 SolidCompression=yes
@@ -51,7 +58,7 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Name: "autostart"; Description: "Start Tangerine automatically when I sign in to Windows"; GroupDescription: "Startup:"
 
 [Files]
-Source: "..\dist\Tangerine\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#BUNDLEDIR}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{autoprograms}\Tangerine"; Filename: "{app}\{#AppExeName}"
@@ -59,4 +66,8 @@ Name: "{autodesktop}\Tangerine"; Filename: "{app}\{#AppExeName}"; Tasks: desktop
 Name: "{userstartup}\Tangerine"; Filename: "{app}\{#AppExeName}"; Tasks: autostart
 
 [Run]
+Filename: "{app}\{#AppExeName}"; Parameters: "--register-shell"; Flags: runhidden waituntilterminated
 Filename: "{app}\{#AppExeName}"; Description: "{cm:LaunchProgram,Tangerine for Windows}"; Flags: nowait postinstall skipifsilent
+
+[UninstallRun]
+Filename: "{app}\{#AppExeName}"; Parameters: "--unregister-shell"; Flags: runhidden waituntilterminated

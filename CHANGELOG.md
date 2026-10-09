@@ -1,5 +1,37 @@
 # Changelog
 
+## 1.10.0 — 2026-10-08
+
+### Novedades
+- **PDF de imágenes integrado:** editor con orden natural, recibido y manual,
+  cuadrícula y nombres opcionales; accesible desde bandeja, ajustes y rueda.
+- **Explorer:** submenú clásico nativo y accesos «Enviar a» para una o múltiples
+  imágenes; la solicitud se entrega a la instancia abierta de Tangerine.
+- El motor comparte los códecs y el progreso de Tangerine, muestra avance por
+  imagen, permite cancelar y publica el PDF de forma atómica con reserva de
+  nombre exclusiva. No sobrescribe originales ni archivos existentes.
+- Migración con respaldo de los registros de la utilidad PDF separada.
+
+### Distribución
+- Incluye las correcciones de Qt WebEngine preparadas para 1.9.2; esa versión
+  no se publicó de manera independiente.
+- Bridge nativo construido con CMake/MSVC o MinGW; instalador por usuario y
+  reparación de accesos desde ajustes. Rutas de iconos corregidas en el bundle.
+- CI ejecuta pruebas y verificaciones reales del WebEngine y del flujo PDF en
+  el ejecutable congelado antes de publicar los artefactos.
+
+## 1.9.2 — preparación del 2026-10-07, incluida en 1.10.0
+
+### Correcciones
+- **Qt WebEngine empaquetado en Windows.** En la aplicación congelada, Tangerine
+  ahora fija el proceso auxiliar, los recursos, las traducciones y la ruta de
+  búsqueda de DLL al bundle instalado. Así evita que Qt seleccione un
+  `QtWebEngineProcess.exe` de otra instalación de Python.
+- El build verifica que el helper, `Qt6WebEngineCore.dll`, el módulo WebEngine
+  y sus recursos estén incluidos, y que helper y DLL tengan la misma versión.
+- El release de Windows ejecuta una página HTML local en el ejecutable final
+  como smoke test del proceso auxiliar.
+
 ## 1.9.1 — 2026-09-27
 
 La rueda ya no aparece sobre videojuegos ni aplicaciones a pantalla completa:

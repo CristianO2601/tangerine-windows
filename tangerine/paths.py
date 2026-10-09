@@ -5,8 +5,8 @@ import sys
 from pathlib import Path
 
 APP_NAME = "Tangerine"
-APP_VERSION = "1.9.1"
-APP_BUILD = 11
+APP_VERSION = "1.10.0"
+APP_BUILD = 13
 
 
 def app_root() -> Path:
@@ -17,7 +17,7 @@ def app_root() -> Path:
 
 
 def assets_dir() -> Path:
-    return app_root() / "assets"
+    return Path(getattr(sys, "_MEIPASS", app_root())) / "assets"
 
 
 def tools_dir() -> Path:

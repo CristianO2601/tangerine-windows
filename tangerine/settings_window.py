@@ -199,8 +199,10 @@ def _margin_choices():
 
 
 class SettingsWindow(QWidget):
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, pdf_callback=None):
         super().__init__(parent)
+        self.setObjectName("SettingsRoot")
+        self.pdf_callback = pdf_callback
         self.setWindowTitle(i18n.tr("settings.title"))
         self.resize(560, 620)
         self.setMinimumSize(500, 480)
@@ -272,8 +274,41 @@ class SettingsWindow(QWidget):
         fullscreen_hint.setWordWrap(True)
         fullscreen_hint.setObjectName("dim")
         layout.addWidget(fullscreen_hint)
+        explorer = QGroupBox(i18n.tr("shell.title"))
+        explorer_layout = QVBoxLayout(explorer)
+        explorer_hint = QLabel(i18n.tr("shell.hint"))
+        explorer_hint.setWordWrap(True)
+        explorer_layout.addWidget(explorer_hint)
+        pdf_button = QPushButton(i18n.tr("pdf.images.title"))
+        pdf_button.clicked.connect(self._open_images_pdf)
+        explorer_layout.addWidget(pdf_button)
+        repair_button = QPushButton(i18n.tr("shell.repair"))
+        repair_button.clicked.connect(self._repair_explorer)
+        explorer_layout.addWidget(repair_button)
+        self._explorer_status = QLabel()
+        self._explorer_status.setWordWrap(True)
+        explorer_layout.addWidget(self._explorer_status)
+        layout.addWidget(explorer)
         layout.addStretch(1)
         return page
+
+    def _open_images_pdf(self):
+        if self.pdf_callback is not None:
+            return self.pdf_callback()
+        from .editors.pdf import open_images_pdf
+        return open_images_pdf()
+
+    def _repair_explorer(self):
+        import sys
+        if not getattr(sys, "frozen", False):
+            self._explorer_status.setText(i18n.tr("shell.source"))
+            return
+        try:
+            from .shell_integration import register_shell
+            register_shell()
+            self._explorer_status.setText(i18n.tr("shell.ready"))
+        except Exception as exc:
+            self._explorer_status.setText(str(exc))
 
     def _language_changed(self):
         code = self.language_combo.currentData()
@@ -537,10 +572,12 @@ class SettingsWindow(QWidget):
             combo.blockSignals(False)
 
 
-def open_settings(parent=None):
+def open_settings(parent=None, pdf_callback=None):
     global _WINDOW
     if _WINDOW is None:
-        _WINDOW = SettingsWindow(parent)
+        _WINDOW = SettingsWindow(parent, pdf_callback=pdf_callback)
+    elif pdf_callback is not None:
+        _WINDOW.pdf_callback = pdf_callback
     _WINDOW.show()
     _WINDOW.raise_()
     _WINDOW.activateWindow()

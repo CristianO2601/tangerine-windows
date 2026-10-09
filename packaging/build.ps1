@@ -2,6 +2,7 @@
 # Tangerine for Windows - one-shot packaging script (no admin required).
 #
 #   powershell -ExecutionPolicy Bypass -File packaging\build.ps1
+#   powershell -ExecutionPolicy Bypass -File packaging\build.ps1 -DistDir build\validation-dist -SkipInstaller
 #
 # Steps:
 #   1. ensure PyInstaller is installed for the current Python
@@ -14,13 +15,21 @@
 [CmdletBinding()]
 param(
     [string]$Python = "python",
-    [switch]$SkipInstaller
+    [switch]$SkipInstaller,
+    [string]$DistDir = ""
 )
 
 $ErrorActionPreference = "Stop"
 
 $RepoRoot = Split-Path -Parent $PSScriptRoot
-$DistDir = Join-Path $RepoRoot "dist"
+if ([string]::IsNullOrWhiteSpace($DistDir)) {
+    $DistDir = Join-Path $RepoRoot "dist"
+}
+elseif (-not [System.IO.Path]::IsPathRooted($DistDir)) {
+    $DistDir = Join-Path $RepoRoot $DistDir
+}
+$DistDir = [System.IO.Path]::GetFullPath($DistDir)
+$OriginalBuildPath = $null
 $SpecRel = "packaging\tangerine.spec"
 $SpecFile = Join-Path $PSScriptRoot "tangerine.spec"
 $IssFile = Join-Path $PSScriptRoot "installer.iss"
@@ -69,21 +78,110 @@ try {
     $Version = Get-AppVersion -PathsFile $PathsFile
     Write-Host "==> Tangerine for Windows $Version" -ForegroundColor Cyan
 
-    Write-Host "==> [1/4] Ensuring PyInstaller is installed"
-    & $Python -m pip install --upgrade pyinstaller pyinstaller-hooks-contrib
-    if ($LASTEXITCODE -ne 0) { throw "pip install failed with exit code $LASTEXITCODE" }
+    Write-Host "==> [1/4] Checking PyInstaller"
+    & $Python -m PyInstaller --version
+    if ($LASTEXITCODE -ne 0) {
+        & $Python -m pip install pyinstaller pyinstaller-hooks-contrib
+        if ($LASTEXITCODE -ne 0) { throw "PyInstaller installation failed with exit code $LASTEXITCODE" }
+    }
 
     Write-Host "==> [2/4] Building frozen bundle (onedir, windowed)"
-    Push-Location -LiteralPath $RepoRoot
+    & (Join-Path $PSScriptRoot "build-shell.ps1")
+    if ($LASTEXITCODE -ne 0) { throw "Native Explorer bridge build failed." }
     try {
-        & $Python -m PyInstaller --noconfirm --clean $SpecRel
-        if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed with exit code $LASTEXITCODE" }
+        # Resolve Windows-provided dependencies before unrelated SDK DLLs on
+        # the developer PATH. In particular, QtCore imports the Windows ICU
+        # API; collecting Poppler's versioned icuuc.dll from PATH shadows it
+        # and prevents Qt6Core.dll from loading in the frozen app.
+        $OriginalBuildPath = $env:PATH
+        $WindowsDllDirectories = @(
+            (Join-Path $env:SystemRoot "System32"),
+            $env:SystemRoot
+        )
+        $WindowsDllDirectoryKeys = @(
+            $WindowsDllDirectories | ForEach-Object { $_.TrimEnd('\') }
+        )
+        $RemainingBuildPath = @(
+            $OriginalBuildPath -split ';' | Where-Object {
+                $_ -and $_.TrimEnd('\') -notin $WindowsDllDirectoryKeys
+            }
+        )
+        $env:PATH = (@($WindowsDllDirectories) + $RemainingBuildPath) -join ';'
+        Write-Host "    Windows system DLL directories take precedence during analysis."
+
+        Push-Location -LiteralPath $RepoRoot
+        try {
+            & $Python -m PyInstaller --noconfirm --clean --distpath $DistDir $SpecRel
+            if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed with exit code $LASTEXITCODE" }
+        }
+        finally {
+            Pop-Location
+        }
     }
     finally {
-        Pop-Location
+        if ($null -ne $OriginalBuildPath) { $env:PATH = $OriginalBuildPath }
     }
     if (-not (Test-Path -LiteralPath $BundleExe)) {
         throw "Expected frozen executable not found: $BundleExe"
+    }
+
+    Write-Host "==> Checking the frozen Qt WebEngine payload"
+    $QtWebEngineDir = Join-Path $BundleDir "_internal\PySide6"
+    $RequiredWebEngineFiles = @(
+        "QtWebEngineProcess.exe",
+        "Qt6WebEngineCore.dll",
+        "QtWebEngineCore.pyd",
+        "resources\icudtl.dat",
+        "resources\qtwebengine_resources.pak",
+        "resources\v8_context_snapshot.bin",
+        "translations\qtwebengine_locales\en-US.pak"
+    )
+    foreach ($relativePath in $RequiredWebEngineFiles) {
+        $requiredPath = Join-Path $QtWebEngineDir $relativePath
+        if (-not (Test-Path -LiteralPath $requiredPath -PathType Leaf)) {
+            throw "Required Qt WebEngine file is missing from the frozen bundle: $requiredPath"
+        }
+    }
+    $helperVersion = [Diagnostics.FileVersionInfo]::GetVersionInfo(
+        (Join-Path $QtWebEngineDir "QtWebEngineProcess.exe")
+    ).FileVersion
+    $coreVersion = [Diagnostics.FileVersionInfo]::GetVersionInfo(
+        (Join-Path $QtWebEngineDir "Qt6WebEngineCore.dll")
+    ).FileVersion
+    if ($helperVersion -and $coreVersion -and $helperVersion -ne $coreVersion) {
+        throw "Qt WebEngine helper/DLL versions differ: helper=$helperVersion core=$coreVersion"
+    }
+    Write-Host ("    Helper and Core DLL: {0}" -f $helperVersion)
+
+    Write-Host "==> Exercising the frozen Qt WebEngine"
+    $SmokeProcess = Start-Process -FilePath $BundleExe -ArgumentList "--smoke-webengine" -WindowStyle Hidden -PassThru
+    if (-not $SmokeProcess.WaitForExit(30000)) {
+        Stop-Process -Id $SmokeProcess.Id -Force
+        throw "Frozen Qt WebEngine smoke test timed out."
+    }
+    $SmokeProcess.Refresh()
+    if ($SmokeProcess.ExitCode -ne 0) {
+        $SmokeLog = Join-Path $env:TEMP "Tangerine-webengine-smoke.log"
+        if (Test-Path -LiteralPath $SmokeLog) {
+            Get-Content -LiteralPath $SmokeLog
+        }
+        throw "Frozen Qt WebEngine smoke test failed with exit code $($SmokeProcess.ExitCode)"
+    }
+    Write-Host "    Qt WebEngine loaded and rendered its local smoke page."
+
+    Write-Host "==> Exercising the frozen image PDF editor, engine and progress card"
+    $PdfSmoke = Start-Process -FilePath $BundleExe -ArgumentList "--smoke-image-pdf" -WindowStyle Hidden -PassThru
+    if (-not $PdfSmoke.WaitForExit(30000)) {
+        Stop-Process -Id $PdfSmoke.Id -Force
+        throw "Frozen image PDF smoke test timed out."
+    }
+    $PdfSmoke.Refresh()
+    $PdfSmokeLog = Join-Path $env:TEMP "Tangerine-image-pdf-smoke.json"
+    if (Test-Path -LiteralPath $PdfSmokeLog) { Get-Content -LiteralPath $PdfSmokeLog }
+    if ($PdfSmoke.ExitCode -ne 0) { throw "Frozen image PDF smoke test failed with exit code $($PdfSmoke.ExitCode)." }
+    $PdfReceipt = Get-Content -LiteralPath $PdfSmokeLog -Raw | ConvertFrom-Json
+    if (-not $PdfReceipt.ok -or $PdfReceipt.version -ne $Version -or $PdfReceipt.ipc_requests -ne 2) {
+        throw 'Frozen PDF validation receipt is incomplete or belongs to another version.'
     }
 
     Write-Host "==> [3/4] Creating portable archive"
@@ -112,7 +210,7 @@ try {
     else {
         Write-Host "    Using: $Iscc"
         if (Test-Path -LiteralPath $Installer) { Remove-Item -LiteralPath $Installer -Force }
-        & $Iscc "/DAPPVER=$Version" $IssFile
+        & $Iscc "/DAPPVER=$Version" "/DBUNDLEDIR=$BundleDir" "/DOUTPUTDIR=$DistDir" $IssFile
         if ($LASTEXITCODE -ne 0) { throw "ISCC failed with exit code $LASTEXITCODE" }
         if (-not (Test-Path -LiteralPath $Installer)) {
             throw "Setup executable was not created: $Installer"

@@ -187,7 +187,7 @@ def test_every_offered_tool_routes(tool_sets):
             total += 1
             before = len(records)
             try:
-                actions.run_tool(
+                routed = actions.run_tool(
                     [str(path) for path in paths], tool.id, None, tool.label
                 )
             except Exception as exc:  # noqa: BLE001
@@ -198,6 +198,12 @@ def test_every_offered_tool_routes(tool_sets):
             kinds = [entry[0] for entry in got]
             if "INFO" in kinds or "WARN" in kinds:
                 problems.append(f"{set_name}/{tool.id}: fallback message box {got}")
+            elif tool.id == "img.pdf":
+                from tangerine.editors.pdf import ImagesPdfDialog
+                if not isinstance(routed, ImagesPdfDialog):
+                    problems.append(f"{set_name}/{tool.id}: expected the image PDF editor")
+                else:
+                    routed.close()
             elif tool.id in actions._COMPRESS_KEYS:
                 if kinds[:1] != ["EXEC"]:
                     problems.append(

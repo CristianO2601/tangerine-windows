@@ -33,4 +33,14 @@ def qapp():
     app = QApplication.instance()
     if app is None:
         app = QApplication([])
+    # Qt's Windows offscreen plugin has no system font database. Load installed
+    # fonts explicitly so widget rendering checks cover legible text as well.
+    if sys.platform == "win32":
+        from PySide6.QtGui import QFont, QFontDatabase
+        fonts = Path(os.environ.get("WINDIR", r"C:\Windows")) / "Fonts"
+        for name in ("segoeui.ttf", "segoeuib.ttf", "seguisym.ttf"):
+            font = fonts / name
+            if font.exists():
+                QFontDatabase.addApplicationFont(str(font))
+        app.setFont(QFont("Segoe UI", 10))
     return app

@@ -66,6 +66,7 @@ print(f"[tangerine.spec] Tangerine {APP_VERSION} -> {VERSION_INFO_FILE}")
 # Data files bundled next to the executable: assets\* -> <_internal>\assets\*
 # ---------------------------------------------------------------------------
 datas = [
+    (os.path.join(REPO_ROOT, "build", "shell", "TangerineShell.dll"), "shell"),
     (os.path.join(ASSETS_DIR, "icon.ico"), "assets"),
     (os.path.join(ASSETS_DIR, "icon.png"), "assets"),
     (os.path.join(ASSETS_DIR, "tray.ico"), "assets"),

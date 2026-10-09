@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import ctypes
 import logging
+import os
 import sys
 import threading
 import traceback
 from pathlib import Path
 
-from PySide6.QtCore import QLockFile, QObject, QTimer
+from PySide6.QtCore import QLockFile, QObject, QThread, QTimer
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication, QMenu, QMessageBox, QSystemTrayIcon
 
@@ -27,6 +28,8 @@ def _write_crash_log(message: str) -> None:
 
 
 def _show_error(message: str) -> None:
+    if os.environ.get("QT_QPA_PLATFORM") == "offscreen":
+        return
     try:
         ctypes.windll.user32.MessageBoxW(None, message, "Tangerine", 0x10)
     except Exception:
@@ -109,6 +112,9 @@ class Controller(QObject):
     # -- localization ----------------------------------------------------------
     def _build_tray_menu(self):
         menu = QMenu()
+        pdf_action = menu.addAction(i18n.tr("pdf.images.title"))
+        pdf_action.triggered.connect(lambda: self.open_images_pdf())
+        menu.addSeparator()
         self._active_menu = menu.addMenu(i18n.tr("tray.active"))
         self._active_menu.aboutToShow.connect(self._rebuild_active)
         menu.addSeparator()
@@ -236,6 +242,10 @@ class Controller(QObject):
     def _track(self, window):
         if window is None:
             return
+        if not hasattr(window, "job"):
+            if hasattr(window, "job_window"):
+                window.finished.connect(lambda *_: self._track(window.job_window))
+            return
         self._jobs.append(window)
         window.job.finished.connect(lambda *_a, w=window: self._forget(w))
         window.job.failed.connect(lambda *_a, w=window: self._forget(w))
@@ -272,7 +282,7 @@ class Controller(QObject):
         try:
             from . import settings_window
 
-            self._settings_window = settings_window.open_settings()
+            self._settings_window = settings_window.open_settings(pdf_callback=self.open_images_pdf)
         except ImportError:
             self.tray.showMessage(
                 i18n.tr("app.name"),
@@ -282,6 +292,37 @@ class Controller(QObject):
             )
             self._settings_window = None
         return self._settings_window
+
+    def open_images_pdf(self, files=None, order=None):
+        from .editors.pdf import open_images_pdf
+        try:
+            window = open_images_pdf(files, order=order)
+            self._track(window)
+            return window
+        except Exception as exc:
+            log.exception("Could not open image PDF editor")
+            QMessageBox.warning(None, i18n.tr("app.name"), str(exc))
+            return None
+
+    def handle_request(self, request):
+        from .image_pdf import PdfOptions, is_pdf_image
+        from . import engines, progress
+        from PySide6.QtGui import QCursor
+        files = [Path(p) for p in request["paths"]]
+        if not files:
+            self.open_images_pdf(order=request["order"])
+            return
+        if not all(is_pdf_image(p) and p.is_file() for p in files):
+            QMessageBox.warning(None, i18n.tr("app.name"), i18n.tr("pdf.images.invalid"))
+            return
+        log.info("Image PDF request: count=%d order=%s quick=%s", len(files), request["order"], request["quick"])
+        if request["quick"]:
+            options = PdfOptions(order=request["order"])
+            window = progress.run_job(i18n.tr("action.creating_pdf"),
+                lambda ctx: [engines.images_to_pdf(files, ctx, set(), options)], anchor=QCursor.pos())
+            self._track(window)
+        else:
+            self.open_images_pdf(files, request["order"])
 
     def _check_updates(self):
         QMessageBox.information(
@@ -332,6 +373,8 @@ def _already_running(app):
 
 
 def _run():
+    from .requests import RequestServer, forward_request, parse_request
+    request = parse_request(sys.argv[1:])
     app = QApplication(sys.argv)
     app.setApplicationName("Tangerine")
     app.setApplicationVersion(paths.APP_VERSION)
@@ -340,15 +383,43 @@ def _run():
     app.setQuitOnLastWindowClosed(False)
     theme.apply_app_theme()
 
+    if request is not None and forward_request(request, 300):
+        return 0
+
     if not QSystemTrayIcon.isSystemTrayAvailable():
         log.error("No system tray available")
         return 1
 
     lock = QLockFile(str(paths.data_dir() / "tangerine.lock"))
     if not lock.tryLock(0):
+        if request is not None:
+            # Another launch may hold the lock while its local pipe is starting.
+            for _ in range(6):
+                if forward_request(request, 500):
+                    return 0
+                # A missing pipe fails immediately; allow the lock owner time
+                # to finish starting its server before the next attempt.
+                QThread.msleep(150)
+            log.error("The running Tangerine instance did not accept the image PDF request")
+            _show_error(i18n.tr("pdf.instance.old"))
+            return 2
         return _already_running(app)
 
+    server = RequestServer(app)
+    if not server.listen():
+        raise RuntimeError(server.server.errorString())
     controller = Controller(app)
+    server.received.connect(controller.handle_request)
+    if request is not None:
+        QTimer.singleShot(0, lambda: controller.handle_request(request))
+    if getattr(sys, "frozen", False):
+        def register():
+            try:
+                from .shell_integration import register_shell
+                register_shell()
+            except Exception:
+                log.exception("Could not update Explorer integration")
+        QTimer.singleShot(0, register)
     QTimer.singleShot(700, _warm_catalog)
     if not settings.get("welcomeShown"):
         controller.notify_welcome()

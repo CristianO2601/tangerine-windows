@@ -29,6 +29,11 @@ def run_conversions(file_paths, target, parent=None, label=None):
     paths = [Path(p) for p in file_paths]
     if not paths:
         return None
+    if target == "pdf":
+        from .image_pdf import is_pdf_image
+        if all(is_pdf_image(p) for p in paths):
+            from .editors.pdf import open_images_pdf
+            return open_images_pdf(paths, parent)
     if label:
         title = label
     elif len(paths) == 1:
@@ -75,7 +80,6 @@ _DIRECT = {
     "arc.extract": ("action.extracting_archive", lambda paths, ctx, reserved: [engines.extract_archive(paths[0], ctx, reserved)]),
     "pdf.merge": ("action.merging_pdfs", lambda paths, ctx, reserved: [tools.merge_pdfs(paths, ctx, reserved)]),
     "pdf.split": ("action.splitting_pdf", lambda paths, ctx, reserved: [tools.split_pdf(paths[0], ctx, reserved)]),
-    "img.pdf": ("action.creating_pdf", lambda paths, ctx, reserved: [engines.images_to_pdf(paths, ctx, reserved)]),
     "vid.removeaudio": ("action.removing_audio", lambda paths, ctx, reserved: [tools.remove_audio(paths[0], ctx, reserved)]),
     "aud.normalize": ("action.normalizing_volume", lambda paths, ctx, reserved: [tools.normalize_audio(paths[0], ctx, reserved)]),
     "txt.compress": ("action.tidying_text", lambda paths, ctx, reserved: _clean_text(paths[0], ctx, reserved)),
@@ -88,6 +92,10 @@ def run_tool(file_paths, key, parent=None, label=None):
     paths = [Path(p) for p in file_paths]
     if not paths:
         return None
+
+    if key == "img.pdf":
+        from .editors.pdf import open_images_pdf
+        return open_images_pdf(paths, parent)
 
     if key == "qr.read" or key.endswith(".qr"):
         return _run_qr(paths, parent)

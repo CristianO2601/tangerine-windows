@@ -58,6 +58,18 @@ wash alone.
 
 ## Features
 
+### Image PDF workflow
+
+Create a PDF from one or several images through Tangerine's tray, tools wheel,
+or **right-click → Send to → Tangerine - Crear PDF**. The second Send to entry,
+**Tangerine - PDF por nombre**, converts immediately in natural filename order
+and closes its progress card when finished. Both use the running Tangerine app.
+
+![Image PDF editor in Tangerine](docs/images/image-pdf-dark.png)
+
+See the [integration audit](docs/image-pdf-integration.md) for the native menu,
+ordering, layout, migration and validation details.
+
 ### Conversions (Shift-drag, or Alt+Shift-drag with the wheel configured the default way)
 
 | Family | Sources | Outputs |
@@ -158,6 +170,41 @@ pythonw main.py
 app shows a tray balloon explaining the Shift / Alt+Shift gestures.
 
 ## Usage
+
+### Create a PDF from images
+
+Use **Create PDF from images...** in the Tangerine tray menu or in
+**Settings → General → File Explorer**. Select one or multiple images. The
+same editor opens from the **Create PDF** tool petal and the **PDF** conversion
+petal when all selected files are images.
+
+- Order pages by natural filename (`Page 2` before `Page 10`), received Explorer
+  order, or manually with **Move up / Move down**.
+- Use one image per page or a rows × columns grid, with optional filename labels.
+- Save beside the source images using an automatic free name, or choose a new
+  output filename. Existing files and original images are preserved.
+- Conversion runs through Tangerine's existing floating progress card, which
+  closes on success. Cancellation and errors use that same card.
+
+The Windows installer registers two shortcuts under **right-click → Send to**:
+**Tangerine - Crear PDF** opens the editor; **Tangerine - PDF por nombre** converts
+immediately in natural order. Both deliver all selected files to the running
+Tangerine instance. They also start Tangerine if it is not running.
+
+A native classic **Tangerine — PDF** submenu is registered too, with natural
+order, received order and configuration actions. Windows may cache extension
+registrations; **Send to** and the tray provide access independently. The
+registration can be repaired from Settings. Explorer selection order does not
+guarantee Ctrl-click chronology; use Manual for an exact sequence.
+
+Upgrading migrates registrations owned by the previous CrisImageToPdf utility
+after saving a registry snapshot under `%APPDATA%\Tangerine\backups`. Its files
+remain available for rollback; image conversion now runs inside Tangerine.
+
+Image PDF pages retain the source image's proportions at 150 dpi. The paper
+and margin preferences for document exports do not apply to this image layout.
+
+### Drag workflows
 
 1. Select one or more files in File Explorer and start dragging them.
 2. Hold **Shift** (conversions) or **Alt+Shift** (tools) while dragging.

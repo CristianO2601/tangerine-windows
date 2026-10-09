@@ -6,9 +6,9 @@ from pathlib import Path
 
 from . import media
 
-IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".avif", ".heic", ".heif", ".tiff", ".tif", ".svg", ".bmp"}
-RASTER_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".avif", ".heic", ".heif", ".tiff", ".tif", ".bmp"}
+RASTER_EXTS = {".jpg", ".jpeg", ".jpe", ".jfif", ".png", ".webp", ".avif", ".heic", ".heif", ".tiff", ".tif", ".bmp", ".dib", ".ico"}
 SVG_EXTS = {".svg"}
+IMAGE_EXTS = RASTER_EXTS | SVG_EXTS
 GIF_EXTS = {".gif"}
 AUDIO_EXTS = {".mp3", ".m4a", ".wav", ".flac", ".ogg", ".opus", ".aiff", ".aif", ".wma"}
 VIDEO_EXTS = {".mp4", ".mov", ".mkv", ".avi", ".webm", ".wmv", ".m4v"}
@@ -413,6 +413,8 @@ def tools_for(paths_: list[Path]) -> list[Tool]:
             tools.append(Tool("img.pdf", "Create PDF", FAMILY_IMAGE, batch=True))
             if counts[FAMILY_IMAGE] > 1:
                 tools.append(Tool("img.collage", "Create Collage", FAMILY_IMAGE, batch=True))
+        elif counts.get(FAMILY_GIF):
+            tools.append(Tool("img.pdf", "Create PDF", FAMILY_IMAGE, batch=True))
         if counts.get(FAMILY_VIDEO):
             tools.append(Tool("vid.compress", "Compress", FAMILY_VIDEO, batch=True))
             if counts[FAMILY_VIDEO] > 1:
@@ -436,7 +438,8 @@ def tools_for(paths_: list[Path]) -> list[Tool]:
         tools.append(Tool("qr.read", "Read QR Codes", FAMILY_IMAGE))
         return filt(tools)
     if family == FAMILY_GIF:
-        return filt(GIF_TOOLS + [Tool("qr.read", "Read QR Codes", FAMILY_GIF)])
+        return filt(GIF_TOOLS + [Tool("img.pdf", "Create PDF", FAMILY_GIF, batch=True),
+                                Tool("qr.read", "Read QR Codes", FAMILY_GIF)])
     if family == FAMILY_AUDIO:
         return filt(AUDIO_TOOLS)
     if family == FAMILY_VIDEO:
@@ -460,7 +463,7 @@ BATCH_TOOL_IDS = {"img.compress", "img.pdf", "img.collage", "aud.compress", "vid
 #: Families a batch tool applies to; used to filter mixed selections.
 _TOOL_FAMILIES = {
     "img.compress": {FAMILY_IMAGE},
-    "img.pdf": {FAMILY_IMAGE},
+    "img.pdf": {FAMILY_IMAGE, FAMILY_GIF},
     "img.collage": {FAMILY_IMAGE},
     "vid.compress": {FAMILY_VIDEO},
     "vid.join": {FAMILY_VIDEO},
