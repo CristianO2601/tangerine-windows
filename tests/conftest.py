@@ -18,6 +18,24 @@ if str(ROOT) not in sys.path:
 import pytest
 
 import tempfile
+from PySide6.QtCore import qInstallMessageHandler
+
+
+def _qt_message_handler(mode, context, message):
+    """Keep native Qt diagnostics visible when a Windows test aborts."""
+    try:
+        kind = getattr(mode, "name", str(mode))
+        category = getattr(context, "category", "") or "default"
+        source = getattr(context, "file", None)
+        line = getattr(context, "line", 0)
+        location = f" {source}:{line}" if source else ""
+        print(f"[Qt {kind} {category}{location}] {message}", file=sys.stderr, flush=True)
+    except Exception:
+        # The handler must never turn a Qt diagnostic into a second failure.
+        pass
+
+
+qInstallMessageHandler(_qt_message_handler)
 
 from tangerine import paths as _paths
 

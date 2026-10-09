@@ -41,7 +41,7 @@ jobs:
           QT_QPA_PLATFORM: offscreen
         run: |
           python -m pip install -r requirements-dev.txt
-          python -m pytest -q --junitxml=build/test-results.xml
+          python -m pytest -s -vv --junitxml=build/test-results.xml
 
       - name: Build portable bundle and installer
         shell: pwsh
