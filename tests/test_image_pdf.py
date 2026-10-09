@@ -21,6 +21,12 @@ def _write_rgb(path: Path, color: tuple[int, int, int] = (200, 40, 20), size=(24
     return path
 
 
+def _windows_error(code: int) -> OSError:
+    error = PermissionError(f"simulated Windows error {code}")
+    error.winerror = code
+    return error
+
+
 def test_is_pdf_image_includes_requested_legacy_extensions():
     for suffix in (".jpg", ".svg", ".gif", ".jpe", ".jfif", ".dib", ".ico"):
         assert image_pdf.is_pdf_image(Path(f"photo{suffix}"))
@@ -239,3 +245,172 @@ def test_progress_reaches_one_only_after_pdf_is_published(tmp_path, monkeypatch)
     assert result == output
     assert values[-1] == 1.0
     assert len(PdfReader(output).pages) == 1
+
+
+@pytest.mark.parametrize("winerror", [5, 32])
+def test_publish_retries_transient_windows_sharing_errors(tmp_path, monkeypatch, winerror):
+    source = _write_rgb(tmp_path / "retry.png")
+    output = tmp_path / "retry.pdf"
+    original_replace = image_pdf.os.replace
+    attempts = 0
+    monkeypatch.setattr(image_pdf, "_PUBLISH_RETRY_DELAYS", (0.0, 0.0))
+
+    def fail_twice_then_replace(src, dst):
+        nonlocal attempts
+        attempts += 1
+        if attempts <= 2:
+            raise _windows_error(winerror)
+        return original_replace(src, dst)
+
+    monkeypatch.setattr(image_pdf.os, "replace", fail_twice_then_replace)
+    result = image_pdf.create_image_pdf([source], _ctx(), options=PdfOptions(output=output))
+
+    assert result == output
+    assert attempts == 3
+    assert len(PdfReader(output).pages) == 1
+    assert list(tmp_path.glob(".*.tmp")) == []
+
+
+def test_persistent_windows_access_denied_is_not_swallowed(tmp_path, monkeypatch):
+    source = _write_rgb(tmp_path / "persistent.png")
+    output = tmp_path / "persistent.pdf"
+    reserved: set[Path] = set()
+    attempts = 0
+    monkeypatch.setattr(image_pdf, "_PUBLISH_RETRY_DELAYS", (0.0, 0.0))
+
+    def always_denied(_src, _dst):
+        nonlocal attempts
+        attempts += 1
+        raise _windows_error(5)
+
+    monkeypatch.setattr(image_pdf.os, "replace", always_denied)
+    with pytest.raises(engines.EngineError) as caught:
+        image_pdf.create_image_pdf([source], _ctx(), reserved, PdfOptions(output=output))
+
+    assert isinstance(caught.value.__cause__, OSError)
+    assert getattr(caught.value.__cause__, "winerror", None) == 5
+    assert attempts == 3
+    assert reserved == set()
+    assert list(tmp_path.glob("*.pdf")) == []
+    assert list(tmp_path.glob(".*.tmp")) == []
+
+
+def test_cancel_during_publish_retry_cleans_temp_and_reservation(tmp_path, monkeypatch):
+    source = _write_rgb(tmp_path / "cancel-retry.png")
+    output = tmp_path / "cancel-retry.pdf"
+    cancel = threading.Event()
+    reserved: set[Path] = set()
+    attempts = 0
+    monkeypatch.setattr(image_pdf, "_PUBLISH_RETRY_DELAYS", (0.5, 0.5))
+
+    def deny_and_cancel(_src, _dst):
+        nonlocal attempts
+        attempts += 1
+        cancel.set()
+        raise _windows_error(32)
+
+    monkeypatch.setattr(image_pdf.os, "replace", deny_and_cancel)
+    with pytest.raises(engines.EngineError, match="Cancelled|Cancelado"):
+        image_pdf.create_image_pdf([source], _ctx(cancel), reserved, PdfOptions(output=output))
+
+    assert attempts == 1
+    assert reserved == set()
+    assert list(tmp_path.glob("*.pdf")) == []
+    assert list(tmp_path.glob(".*.tmp")) == []
+
+
+def test_publish_retry_does_not_delete_replaced_foreign_reservation(tmp_path, monkeypatch):
+    source = _write_rgb(tmp_path / "foreign.png")
+    output = tmp_path / "foreign.pdf"
+    original_replace = image_pdf.os.replace
+    reserved: set[Path] = set()
+    attempts = 0
+    foreign_bytes = b"another process owns this path"
+    monkeypatch.setattr(image_pdf, "_PUBLISH_RETRY_DELAYS", (0.0, 0.0))
+
+    def replace_reservation_then_deny(_src, dst):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            Path(dst).unlink()
+            Path(dst).write_bytes(foreign_bytes)
+            raise _windows_error(5)
+        return original_replace(_src, dst)
+
+    monkeypatch.setattr(image_pdf.os, "replace", replace_reservation_then_deny)
+    with pytest.raises(engines.EngineError):
+        image_pdf.create_image_pdf([source], _ctx(), reserved, PdfOptions(output=output))
+
+    assert attempts == 1
+    assert output.read_bytes() == foreign_bytes
+    assert reserved == set()
+    assert list(tmp_path.glob(".*.tmp")) == []
+
+
+def test_publish_does_not_retry_winerror_33_byte_range_lock(tmp_path, monkeypatch):
+    source = _write_rgb(tmp_path / "range-lock.png")
+    output = tmp_path / "range-lock.pdf"
+    reserved: set[Path] = set()
+    attempts = 0
+
+    def range_locked(_src, _dst):
+        nonlocal attempts
+        attempts += 1
+        raise _windows_error(33)
+
+    monkeypatch.setattr(image_pdf.os, "replace", range_locked)
+    with pytest.raises(engines.EngineError):
+        image_pdf.create_image_pdf([source], _ctx(), reserved, PdfOptions(output=output))
+
+    assert attempts == 1
+    assert reserved == set()
+    assert list(tmp_path.glob("*.pdf")) == []
+    assert list(tmp_path.glob(".*.tmp")) == []
+
+
+def test_publish_does_not_retry_errno_5_without_windows_winerror(tmp_path, monkeypatch):
+    source = _write_rgb(tmp_path / "io-error.png")
+    output = tmp_path / "io-error.pdf"
+    attempts = 0
+
+    def generic_io_error(_src, _dst):
+        nonlocal attempts
+        attempts += 1
+        raise OSError(5, "simulated non-Windows I/O error")
+
+    monkeypatch.setattr(image_pdf.os, "replace", generic_io_error)
+    with pytest.raises(engines.EngineError):
+        image_pdf.create_image_pdf([source], _ctx(), options=PdfOptions(output=output))
+
+    assert attempts == 1
+    assert list(tmp_path.glob("*.pdf")) == []
+    assert list(tmp_path.glob(".*.tmp")) == []
+
+
+def test_temp_cleanup_error_does_not_mask_persistent_publish_error(tmp_path, monkeypatch):
+    source = _write_rgb(tmp_path / "cleanup.png")
+    output = tmp_path / "cleanup.pdf"
+    reserved: set[Path] = set()
+    original_unlink = Path.unlink
+
+    def fail_publish(_src, _dst):
+        raise _windows_error(5)
+
+    monkeypatch.setattr(image_pdf.os, "replace", fail_publish)
+
+    def deny_temp_cleanup(path, missing_ok=False):
+        if path.suffix == ".tmp":
+            raise PermissionError("simulated temporary-file lock")
+        return original_unlink(path, missing_ok=missing_ok)
+
+    monkeypatch.setattr(Path, "unlink", deny_temp_cleanup)
+    with pytest.raises(engines.EngineError) as caught:
+        image_pdf.create_image_pdf([source], _ctx(), reserved, PdfOptions(output=output))
+
+    assert getattr(caught.value.__cause__, "winerror", None) == 5
+    assert reserved == set()
+    assert not output.exists()
+    leftovers = list(tmp_path.glob(".*.tmp"))
+    assert len(leftovers) == 1
+    # The simulated lock is released here so the test itself leaves no artifact.
+    original_unlink(leftovers[0], missing_ok=True)

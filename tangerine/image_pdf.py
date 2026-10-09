@@ -7,6 +7,7 @@ import os
 import re
 import tempfile
 import threading
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -25,6 +26,11 @@ _PDF_IMAGE_EXTS = set(RASTER_EXTS) | set(SVG_EXTS) | set(GIF_EXTS) | {
 }
 _NATURAL_PARTS = re.compile(r"(\d+)")
 _RESERVED_LOCK = threading.Lock()
+# Five retries with 1.0 second total backoff. WinError 5 can be transient on
+# Windows when another process briefly denies replacement; persistent access
+# errors still surface after the bounded retry window.
+_PUBLISH_RETRY_DELAYS = (0.05, 0.10, 0.20, 0.25, 0.40)
+_PUBLISH_RETRYABLE_WINERRORS = frozenset({5, 32})
 
 
 @dataclass(frozen=True)
@@ -178,8 +184,8 @@ def _reserve_output(
     candidate: Path,
     explicit: bool,
     reserved: set[Path],
-) -> tuple[Path, Path]:
-    """Claim a sibling name atomically, returning final and placeholder paths."""
+) -> tuple[Path, tuple[int, int]]:
+    """Claim a sibling name and return its path plus the placeholder file identity."""
     from .engines import EngineError
 
     candidate.parent.mkdir(parents=True, exist_ok=True)
@@ -204,9 +210,50 @@ def _reserve_output(
                 number += 1
                 continue
             else:
-                os.close(descriptor)
+                try:
+                    identity = os.fstat(descriptor)
+                finally:
+                    os.close(descriptor)
                 reserved.add(path)
-                return path, path
+                return path, (identity.st_dev, identity.st_ino)
+
+
+def _owns_output_reservation(path: Path, identity: tuple[int, int]) -> bool:
+    """Check the reserved directory entry still refers to our placeholder."""
+    try:
+        current = path.lstat()
+    except OSError:
+        return False
+    return (current.st_dev, current.st_ino) == identity
+
+
+def _replace_with_retry(
+    source: Path,
+    destination: Path,
+    reservation: tuple[int, int],
+    ctx: Ctx,
+) -> None:
+    """Atomically publish a PDF, retrying only transient Windows sharing errors."""
+    for attempt in range(len(_PUBLISH_RETRY_DELAYS) + 1):
+        _check_cancel(ctx)
+        if not _owns_output_reservation(destination, reservation):
+            raise OSError(f"Reserved PDF output changed before publication: {destination.name}")
+        try:
+            os.replace(source, destination)
+            return
+        except OSError as exc:
+            # ERROR_LOCK_VIOLATION (33) describes a byte-range lock, not the
+            # sharing denial (32) that can temporarily block a rename. Do not
+            # retry 33 or generic errno values such as POSIX EIO (5).
+            _check_cancel(ctx)
+            if (getattr(exc, "winerror", None) not in _PUBLISH_RETRYABLE_WINERRORS
+                    or attempt == len(_PUBLISH_RETRY_DELAYS)):
+                raise
+            delay = _PUBLISH_RETRY_DELAYS[attempt]
+            if ctx.cancel is None:
+                time.sleep(delay)
+            elif ctx.cancel.wait(delay):
+                _check_cancel(ctx)
 
 
 def create_image_pdf(
@@ -243,6 +290,7 @@ def create_image_pdf(
     pages: list[Image.Image] = []
     pdf_pages: list[Image.Image] = []
     output: Path | None = None
+    reservation: tuple[int, int] | None = None
     temp_path: Path | None = None
     published = False
     try:
@@ -269,7 +317,7 @@ def create_image_pdf(
         _check_cancel(ctx)
 
         candidate, explicit = _output_candidate(ordered, options)
-        output, _placeholder = _reserve_output(candidate, explicit, outputs)
+        output, reservation = _reserve_output(candidate, explicit, outputs)
         descriptor, temp_name = tempfile.mkstemp(
             prefix=f".{output.stem}.", suffix=".tmp", dir=output.parent,
         )
@@ -283,7 +331,7 @@ def create_image_pdf(
             save_all=True, append_images=pdf_pages[1:],
         )
         _check_cancel(ctx)
-        os.replace(temp_path, output)
+        _replace_with_retry(temp_path, output, reservation, ctx)
         temp_path = None
         published = True
         ctx.progress(1.0)
@@ -300,11 +348,17 @@ def create_image_pdf(
             except Exception:
                 pass
         if temp_path is not None:
-            temp_path.unlink(missing_ok=True)
+            try:
+                temp_path.unlink(missing_ok=True)
+            except OSError:
+                # Preserve the conversion/publication error if Windows still
+                # has the temporary file open; cleanup is best effort here.
+                pass
         if output is not None and not published:
             with _RESERVED_LOCK:
-                try:
-                    output.unlink(missing_ok=True)
-                except OSError:
-                    pass
+                if reservation is not None and _owns_output_reservation(output, reservation):
+                    try:
+                        output.unlink(missing_ok=True)
+                    except OSError:
+                        pass
                 outputs.discard(output)

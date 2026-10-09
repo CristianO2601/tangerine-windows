@@ -49,6 +49,20 @@ limita su tamaño, confirma recepción y evita procesar dos veces el mismo ID.
 `Enviar a` proporciona una entrada mediante un menú que ya existe en Explorer.
 La fila nativa de primer nivel requiere además que Explorer cargue la extensión.
 Las pruebas del DLL y del registro no equivalen a una observación del menú real.
+La comprobación final consultó también el menú combinado de Windows mediante
+`SHParseDisplayName` → `SHBindToParent` → `IShellFolder::GetUIObjectOf` →
+`IContextMenu`, sin mostrarlo. En selecciones simples y múltiples encontró la
+etiqueta exacta `Tangerine — PDF` y los tres verbos propios. Invocó exclusivamente
+`Tangerine.Pdf.Name` y validó los PDF resultantes. Esto comprueba el flujo Shell
+→ DLL → manifiesto → ejecutable → instancia abierta → PDF; no observa la
+presentación ni la caché del proceso `explorer.exe` del usuario.
+La auditoría de solo lectura también comparó arquitectura, usuario, sesión y
+nivel de integridad de Explorer y Tangerine, sin diferencias. No encontró el
+CLSID propio bloqueado ni políticas de aprobación obligatoria en las claves
+consultadas. El log y la instantánea de módulos todavía no muestran activación
+desde `explorer.exe`; no se observó un clic derecho posterior a la instalación,
+por lo que esa ausencia no demuestra un fallo actual. Los recibos son
+`process-context-readonly-20261008-r2.json` y `explorer-shell-audit-readonly.json`.
 La integración no reinicia Explorer ni cambia sus políticas globales.
 
 ## Orden, salida y errores
@@ -63,7 +77,11 @@ La integración no reinicia Explorer ni cambia sus políticas globales.
 - La salida automática usa un nombre libre junto a las imágenes. Una salida
   explícita existente se rechaza; los originales no se sobrescriben.
 - Reserva exclusiva del nombre, archivo temporal en la misma carpeta y
-  publicación con `os.replace`. Cancelación o error limpia la salida parcial.
+  publicación con `os.replace`. WinError 5/32 admite cinco reintentos con pausas
+  que suman 1 s, con cancelación entre intentos. Se verifica la identidad de la
+  reserva antes de reintentar y de borrar el placeholder. Los errores
+  persistentes se muestran; la limpieza de un archivo aún bloqueado es de mejor
+  esfuerzo y conserva el error original de conversión.
 - La tarjeta compartida muestra avance, ofrece cancelar al pasar el puntero y
   se cierra después de publicar el PDF. Los errores permanecen visibles.
 - El PDF conserva proporciones de las imágenes, a 150 dpi. Los ajustes A4/Carta
@@ -121,14 +139,65 @@ preparada para 1.9.2 y ahora incorporada en 1.10.0.
 ## Evidencia local de esta integración
 
 - Cambios previos conservados: `build/integration-evidence/20261008-184557/before.diff`.
-- Regresión final: 214 aprobadas, 1 omitida. El recibo final se guarda en
-  `build/integration-evidence/20261008-184557/pytest-final.txt`.
+- Regresión final del motor con reintentos: 222 aprobadas, 1 omitida. El recibo
+  se guarda en `build/integration-evidence/20261008-184557/pytest-publish-final.txt`.
+  Los 23 casos del motor incluyen errores Windows simulados, persistencia,
+  cancelación, sustitución de reserva y fallo de limpieza. No se presenta una
+  simulación como reproducción del bloqueo real de Windows.
 - Smoke de código fuente: `ok=true`, versión 1.10.0, 2 peticiones IPC, PDF de
   1 y 3 páginas, limpieza del manifiesto y autocierre confirmados.
 - Renders de los widgets en español: carpeta local de evidencia, `pdf-True.png`,
   `pdf-False.png`, `settings-True.png`, `settings-False.png`.
-- Validación del paquete, instalación y lectura del registro: completar con los
-  recibos de la compilación final antes de dar la entrega por terminada.
+- Paquete e instalación: `--smoke-webengine` y `--smoke-image-pdf` terminaron con
+  código 0 tanto desde el bundle como desde `%LOCALAPPDATA%/Programs/Tangerine`.
+  Los recibos `installed-webengine-smoke.log` e `installed-image-pdf-smoke.json`
+  confirman WebEngine con sandbox activo, 2 peticiones IPC, PDF de 1 y 3 páginas,
+  orden del editor, limpieza del manifiesto y autocierre.
+- Instalador: código 0; su llamada `--register-shell` también terminó con 0.
+  `installation-receipt.json` verifica versión, hashes, claves HKCU, accesos
+  SendTo y de inicio automático, ajustes preservados y respaldo del registro
+  independiente. Solo quedó ejecutándose Tangerine desde la instalación nueva.
+- Shell completo: `shell-invoke-final.txt` y `shell-final-receipt.json` confirman
+  menú para una y varias imágenes, etiqueta Unicode exacta, invocación nativa
+  con código 0 y PDF de 1 y 2 páginas leídos con `pypdf`. No se usó Computer Use.
+  La primera petición excedió el límite inicial de 15 s del probe y terminó
+  después; la repetición y la prueba final completaron ambos casos en unos 5 s
+  en total. No se atribuye esa primera demora a una causa no medida.
+- Se detectó y corrigió un guion mal codificado por MSVC: `/utf-8`, literal
+  Unicode y prueba nativa que exige la etiqueta exacta. Se reconstruyó la DLL
+  y se regeneraron ZIP e instalador desde el mismo bundle validado.
+
+Los hashes de EXE, DLL, ZIP e instalador se conservan en los recibos locales
+`installation-receipt.json`, `portable-final-receipt.json` y
+`release-local-hashes.json`. Cada nueva compilación exige volver a ejecutar las
+comprobaciones del bundle y de la instalación; una prueba de código fuente no
+valida un ejecutable anterior.
+
+### Pruebas en GitHub
+
+El primer runner instaló Qt 6.12.0; fijar la dependencia a la versión local
+6.11.2 no resolvió por sí solo el abort de las pruebas. El render aislado pasó
+en el mismo runner con Segoe UI cargada. La comparación A/B del run
+[37866653643](https://github.com/CristianO2601/tangerine-windows/actions/runs/37866653643)
+aisló la contaminación al test IPC: el archivo de pruebas fresco abortaba tras
+ese caso, mientras la suite sin ese caso alcanzaba ambos renders.
+
+El test cerraba únicamente el listener, dejando objetos Qt pendientes de
+destrucción. Ahora destruye sockets y servidor, entrega `DeferredDelete` antes
+de restaurar los monkeypatches y comprueba la destrucción de todos los sockets.
+También elimina las ventanas Qt creadas por cada prueba antes de restaurar su
+estado. No se modificó el servidor de producción para ocultar el fallo.
+
+El run [37885535793](https://github.com/CristianO2601/tangerine-windows/actions/runs/37885535793)
+del commit `f1b462d59c39e56975063be88cbd58fa1f1b308c` pasó la suite completa en
+Windows/Python 3.12: 197 aprobadas y 14 omitidas, con IPC y renders incluidos.
+El recibo local es `ci-ipc-cleanup.txt`. La relación con la limpieza del test
+queda comprobada; no se atribuye el abort a una causa nativa más específica ni
+a la diferencia entre Python 3.12 y 3.14 sin una prueba cruzada.
+
+La comparación A/B detectó además un `WinError 5` real en `os.replace` durante
+la publicación simultánea de dos PDF. Ese fallo se trata por separado en el
+motor, conservando la reserva exclusiva y la publicación atómica.
 
 ### Diagnóstico del build local
 

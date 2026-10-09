@@ -11,6 +11,8 @@
   imagen, permite cancelar y publica el PDF de forma atómica con reserva de
   nombre exclusiva. No sobrescribe originales ni archivos existentes.
 - Migración con respaldo de los registros de la utilidad PDF separada.
+- Reintento limitado ante WinError 5/32 al publicar el PDF; conserva cancelación,
+  reserva exclusiva y el error original si falla la limpieza del temporal.
 
 ### Distribución
 - Incluye las correcciones de Qt WebEngine preparadas para 1.9.2; esa versión
