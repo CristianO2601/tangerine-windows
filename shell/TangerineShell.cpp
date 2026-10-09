@@ -388,7 +388,7 @@ public:
         MENUITEMINFOW parent{};
         parent.cbSize = sizeof(parent);
         parent.fMask = MIIM_STRING | MIIM_SUBMENU;
-        parent.dwTypeData = const_cast<wchar_t*>(L"Tangerine — PDF");
+        parent.dwTypeData = const_cast<wchar_t*>(L"Tangerine \u2014 PDF");
         parent.hSubMenu = submenu;
         if (!InsertMenuItemW(menu, index, TRUE, &parent)) {
             const HRESULT error = LastErrorHr();

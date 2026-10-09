@@ -23,6 +23,7 @@
 static const CLSID CLSID_TangerineShell = {
     0x7e2c14a9, 0x8d31, 0x4b76, {0xa5, 0xf0, 0x3c, 0x9d, 0x82, 0x16, 0xe4, 0xb2}};
 using DllGetClassObjectFn = HRESULT(WINAPI*)(REFCLSID, REFIID, void**);
+static constexpr wchar_t kExpectedRootLabel[] = L"Tangerine \u2014 PDF";
 
 class DropDataObject final : public IDataObject {
     LONG references_ = 1;
@@ -144,12 +145,21 @@ static bool ValidateSelection(IClassFactory* factory, const std::vector<std::wst
     if (shouldAppear && passed) {
         MENUITEMINFOW item{};
         item.cbSize = sizeof(item);
-        item.fMask = MIIM_SUBMENU;
-        passed = GetMenuItemInfoW(menu, 0, TRUE, &item) && item.hSubMenu && GetMenuItemCount(item.hSubMenu) == 3;
+        item.fMask = MIIM_SUBMENU | MIIM_STRING;
+        passed = GetMenuItemInfoW(menu, 0, TRUE, &item);
+        if (passed) {
+            std::vector<wchar_t> menuLabel(static_cast<size_t>(item.cch) + 1, L'\0');
+            item.dwTypeData = menuLabel.data();
+            item.cch = static_cast<UINT>(menuLabel.size());
+            passed = GetMenuItemInfoW(menu, 0, TRUE, &item) && item.hSubMenu &&
+                GetMenuItemCount(item.hSubMenu) == 3 && std::wstring(menuLabel.data()) == kExpectedRootLabel;
+        }
     }
     DestroyMenu(menu);
     std::printf("%s: %s (HRESULT=0x%08lX, allocated=%u, menu_items=%d)\n", label,
         passed ? "PASS" : "FAIL", static_cast<unsigned long>(result), allocated, topLevelCount);
+    if (shouldAppear)
+        std::printf("%s: root label exact = %s\n", label, passed ? "yes" : "no");
     return passed;
 }
 
