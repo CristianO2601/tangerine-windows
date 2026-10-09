@@ -35,7 +35,7 @@ def editors_smoke() -> int:
 
     try:
         # Keep Qt imports below the environment assignment above.
-        from PySide6.QtCore import QPoint, QEventLoop, Qt, QTimer
+        from PySide6.QtCore import QPoint, QEventLoop, QSignalBlocker, Qt, QTimer
         from PySide6.QtTest import QTest
         from PySide6.QtWidgets import QApplication
         from PIL import Image, ImageChops, ImageDraw
@@ -127,6 +127,11 @@ def editors_smoke() -> int:
                     app.processEvents()
                     x, y, width, height = canvas.rect
                     assert width < 96 and height > 8, f"Crop handle did not resize: {canvas.rect}"
+                    assert dialog.w_spin._up_button.isEnabled(), "Crop drag left numeric increase disabled"
+                    previous_width = dialog.w_spin.value()
+                    QTest.mouseClick(dialog.w_spin._up_button, Qt.MouseButton.LeftButton)
+                    assert dialog.w_spin.value() == previous_width + 1
+                    x, y, width, height = canvas.rect
                     box = (round(x), round(y), round(x + width), round(y + height))
                     output = tools.crop_image(
                         source_paths[0], box,
@@ -149,7 +154,11 @@ def editors_smoke() -> int:
                 annotate = AnnotateDialog(source_paths[0])
                 try:
                     spin.setRange(0, 5)
-                    spin.setValue(2)
+                    spin.setValue(5)
+                    assert not spin._up_button.isEnabled()
+                    with QSignalBlocker(spin):
+                        spin.setValue(2)
+                    assert spin._up_button.isEnabled(), "Signal-blocked updates left the step button disabled"
                     spin.resize(180, 50)
                     spin.show()
                     app.processEvents()
@@ -161,7 +170,7 @@ def editors_smoke() -> int:
                     assert annotate.canvas.stroke_width == 7
                     assert callable(annotate.canvas.width)
                     assert annotate.canvas.width() == 620
-                    return {"step_value": spin.value(), "stroke_width": 7,
+                    return {"step_value": spin.value(), "blocked_signal_refresh": True, "stroke_width": 7,
                             "canvas_width": annotate.canvas.width()}
                 finally:
                     spin.close()

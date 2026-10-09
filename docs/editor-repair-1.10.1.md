@@ -1,5 +1,8 @@
 # Reparación de editores y selección múltiple — 1.10.1
 
+**Seguimiento:** la revisión final detectó un estado residual en las flechas
+después de sincronizar un recorte. Véase la [corrección 1.10.2](editor-repair-1.10.2.md).
+
 ## Causas reproducidas
 
 | Síntoma | Causa en código | Cambio |

@@ -73,7 +73,8 @@ again. Invalid or missing saved options open the dialog. Crop, Annotate and
 Redact always collect positions for each source image.
 
 See the [1.10.1 repair audit](docs/editor-repair-1.10.1.md) for causes, components,
-and the runtime validation used before packaging.
+and the runtime validation used before packaging. The [1.10.2 follow-up](docs/editor-repair-1.10.2.md)
+covers numeric buttons after dragging a crop.
 
 ### Image PDF workflow
 

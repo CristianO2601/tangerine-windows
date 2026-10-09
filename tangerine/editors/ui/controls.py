@@ -127,6 +127,23 @@ class _NumericSpinMixin:
         super().setReadOnly(read_only)
         self._sync_step_buttons()
 
+    def setValue(self, value):
+        """Refresh affordances even when callers block Qt value signals."""
+        super().setValue(value)
+        self._sync_step_buttons()
+
+    def stepBy(self, steps):
+        super().stepBy(steps)
+        self._sync_step_buttons()
+
+    def setWrapping(self, wrapping):
+        super().setWrapping(wrapping)
+        self._sync_step_buttons()
+
+    def interpretText(self):
+        super().interpretText()
+        self._sync_step_buttons()
+
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self._layout_step_buttons()

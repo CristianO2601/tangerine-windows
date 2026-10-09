@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.10.2 — 2026-10-09
+
+- Corrige un estado residual de los nuevos controles numéricos: las flechas
+  se actualizan aunque el editor bloquee señales al sincronizar dimensiones
+  desde el lienzo. Después de arrastrar un recorte, vuelve a ser posible
+  aumentar o reducir sus dimensiones con los botones.
+- Añade regresiones para enteros y decimales y reproduce la secuencia real
+  de recorte → actualizar campos → pulsar flecha en el smoke empaquetado.
+
 ## 1.10.1 — 2026-10-09
 
 - **Annotate:** vuelve a mostrar la imagen; el grosor ya no oculta el método
