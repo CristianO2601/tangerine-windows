@@ -41,7 +41,17 @@ jobs:
           QT_QPA_PLATFORM: offscreen
         run: |
           python -m pip install -r requirements-dev.txt
+          python -m pytest -s -vv tests/test_pdf_flow.py::test_pdf_editor_renders_with_app_theme
+          if ($LASTEXITCODE -ne 0) { throw 'Isolated Qt rendering validation failed' }
           python -m pytest -s -vv --junitxml=build/test-results.xml
+
+      - name: Read native crash diagnostics
+        if: failure()
+        shell: pwsh
+        run: |
+          Get-WinEvent -FilterHashtable @{LogName='Application'; StartTime=(Get-Date).AddMinutes(-10)} -ErrorAction SilentlyContinue |
+            Where-Object { $_.ProviderName -in @('Application Error', 'Windows Error Reporting') } |
+            Select-Object -First 5 TimeCreated, ProviderName, Message | Format-List
 
       - name: Build portable bundle and installer
         shell: pwsh

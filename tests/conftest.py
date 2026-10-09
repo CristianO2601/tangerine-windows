@@ -46,19 +46,32 @@ _paths.settings_file = lambda: _SETTINGS_TMP / "settings.json"
 @pytest.fixture(scope="session")
 def qapp():
     """Return the process-wide QApplication, creating it on first use."""
+    import PySide6
+    from PySide6.QtCore import qVersion
     from PySide6.QtWidgets import QApplication
 
     app = QApplication.instance()
     if app is None:
         app = QApplication([])
+    font_probes = []
+    from PySide6.QtGui import QFont, QFontDatabase
     # Qt's Windows offscreen plugin has no system font database. Load installed
     # fonts explicitly so widget rendering checks cover legible text as well.
     if sys.platform == "win32":
-        from PySide6.QtGui import QFont, QFontDatabase
         fonts = Path(os.environ.get("WINDIR", r"C:\Windows")) / "Fonts"
         for name in ("segoeui.ttf", "segoeuib.ttf", "seguisym.ttf"):
             font = fonts / name
-            if font.exists():
-                QFontDatabase.addApplicationFont(str(font))
+            font_id = QFontDatabase.addApplicationFont(str(font)) if font.exists() else None
+            font_probes.append((name, font.exists(), font_id))
         app.setFont(QFont("Segoe UI", 10))
+    families = QFontDatabase.families()
+    print(
+        "[qapp-probe] "
+        f"python={sys.version.split()[0]} PySide6={PySide6.__version__} Qt={qVersion()} "
+        f"qpa={os.environ.get('QT_QPA_PLATFORM', '<default>')} "
+        f"appFont={app.font().family()!r} families={len(families)} "
+        f"segoeUI={'Segoe UI' in families} fontFiles={font_probes}",
+        file=sys.stderr,
+        flush=True,
+    )
     return app
