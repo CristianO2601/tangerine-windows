@@ -43,6 +43,55 @@ _SETTINGS_TMP = Path(tempfile.mkdtemp(prefix="tangerine_test_settings_"))
 _paths.settings_file = lambda: _SETTINGS_TMP / "settings.json"
 
 
+@pytest.fixture(autouse=True)
+def cleanup_test_qt_windows(monkeypatch):
+    """Destroy windows made by each test before its monkeypatches are restored.
+
+    Qt widgets can outlive ``close()`` when a module keeps a Python reference.
+    Since this fixture depends on pytest's ``monkeypatch``, its teardown runs
+    first: close handlers and deferred Qt events still see the test's patched
+    functions, then monkeypatch restores module state.
+    """
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance()
+    baseline = list(app.topLevelWidgets()) if app is not None else []
+    yield
+
+    app = QApplication.instance()
+    if app is None:
+        return
+    created = [
+        widget for widget in app.topLevelWidgets()
+        if not any(widget is previous for previous in baseline)
+    ]
+    if not created:
+        return
+
+    labels = [widget.objectName() or widget.windowTitle() or type(widget).__name__
+              for widget in created]
+    print(f"[qt-window-cleanup] closing {len(created)} test window(s): {labels}",
+          file=sys.stderr, flush=True)
+    from PySide6.QtCore import QCoreApplication, QEvent
+    import shiboken6
+
+    for widget in created:
+        if shiboken6.isValid(widget):
+            widget.close()
+            widget.deleteLater()
+    # Deliver deferred destruction while test monkeypatches are still active;
+    # do not pump unrelated paint/timer events during teardown.
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+    remaining = [
+        widget for widget in app.topLevelWidgets()
+        if not any(widget is previous for previous in baseline)
+    ]
+    if remaining:
+        names = [widget.objectName() or widget.windowTitle() or type(widget).__name__
+                 for widget in remaining]
+        pytest.fail(f"Qt test windows survived deferred deletion: {names}")
+
+
 @pytest.fixture(scope="session")
 def qapp():
     """Return the process-wide QApplication, creating it on first use."""
